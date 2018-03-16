@@ -199,7 +199,7 @@ class STK:
 			self.connectmenu.delete(0)
 		comports = sorted(serial.tools.list_ports.comports(), key=lambda x: x[0])
 		for port,description,address in comports:
-			self.connectmenu.add_command(label=port + " - " + description, command=lambda p=port: self.connect(p))
+			self.connectmenu.add_command(label=port + " - " + description, command=lambda p=port: self.serial_connect(p))
 		self.connectmenu.add_separator()
 		self.connectmenu.add_command(label='Refresh Ports', command=self.update_ports)
 	
@@ -211,7 +211,7 @@ class STK:
 		self.timetext.after(20,self.update_time)
 	
 	#function to connect to a serial port and begin monitoring for reports
-	def connect(self,port):
+	def serial_connect(self,port):
 		try:
 			self.serial=serial.Serial(port, timeout=0)
 		except serial.SerialException:
@@ -227,7 +227,7 @@ class STK:
 		self.process_serial()
 	
 	#function to disconnect serial.  Done if there is a serial error.
-	def disconnect(self):
+	def serial_disconnect(self):
 		self.serial.close()
 		self.t.after_cancel(self.serialalarm)
 		self.update_ports()
@@ -276,8 +276,10 @@ class STK:
 			self.logfile=open(self.logfile,"wb")
 			self.filemenu.entryconfigure(0, label="Close Log File")
 	
-	#function to "learn" report configuration from proper log files.
+	#
 	def report_config_auto(self):
+		"""Function to learn report configuration from properly formatted log files."""
+		
 		tkMessageBox.showwarning("Select Valid Log File","When selecting a log file for learning it is vital to have only valid reports")
 		self.learning=True
 		self.process_logfile()
@@ -285,13 +287,14 @@ class STK:
 		
 		
 	def report_config_manual(self):
+		"""Function to create gui to manually configure reports.."""
+		
 		if hasattr(self, 'rc_win') and self.rc_win.winfo_exists():
 			self.rc_win.deiconify()
 			self.rc_win.focus_force()
 			self.rc_win.lift()
 			return
 		self.rc_win = Toplevel()
-		#self.rc needed right now for some reason for IntVar for radio buttons to work.
 		ReportConfig(self.rc_win,self.config)
 	
 	#function to process log file.  Can process multiple at the same time.  Used for both configuration and importing of reports
@@ -339,7 +342,7 @@ class STK:
 			self.serialalarm = self.t.after(10,self.process_serial)
 		except serial.SerialException:
 			self.log_error("Error reading from serial port. Disconnecting.")
-			self.disconnect()
+			self.serial_disconnect()
 		
 	#functions to display a line of text at the bottom of the text window and manage max size
 	def display_line(self,line):
@@ -546,6 +549,9 @@ class STK:
 		self.db.close()
 		
 	def create_database(self):
+		"""Method to create a blank database in the correct format.  Run if database does not exists"""
+		
+		#Placeholder for now
 		print "database does not exist"
 		
 
@@ -684,13 +690,13 @@ class DataNumerical:
 		type_tree.pack(side=BOTTOM,fill=X,anchor=S)
 		type_tree.heading("#0",text="Select Report Type")
 		
-		report_tree=Treeview(report_frame,selectmode="browse")
+		#report_tree=Treeview(report_frame,selectmode="browse")
+		report_tree=StructureTree(report_frame,self.dbfile)
 		report_tree.column("#0", minwidth=223,width=223,stretch=False)
 		report_tree.pack(side=BOTTOM,fill=Y,expand=True, anchor=S)
 		report_tree.bind("<<TreeviewSelect>>",self.get_report_types)
 		report_tree.heading("#0",text="Select Sensor")
 
-		#self.an_win=an_win
 		self.report_tree=report_tree
 		self.type_tree=type_tree
 		self.data_tree=data_tree
@@ -699,7 +705,6 @@ class DataNumerical:
 		self.start_entry=start_entry
 		self.end_entry=end_entry
 		
-		self.update_reports()
 		
 	#function called when radio buttons change.  Will make custom dates disabled/normal
 	def change_filter(self):
@@ -709,24 +714,6 @@ class DataNumerical:
 		else:
 			self.start_entry.config(state='disabled')
 			self.end_entry.config(state='disabled')
-			
-	
-	def update_reports(self):
-		self.report_tree.delete(*self.report_tree.get_children())
-		
-		self.db = sqlite3.connect(self.dbfile)
-		c=self.db.cursor()
-		c.execute("""SELECT DISTINCT LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName from v_reportData ORDER BY LocationName, ReportTypeName,SensorID""")
-		for LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName in c.fetchall():
-			LocationLabel="Location_%d"%LocationID
-			ReportTypeLabel="Location_%d"%LocationID
-			LocationLabel="Location_%d"%LocationID
-			if not self.report_tree.exists("Location_%d"%LocationID):
-				self.report_tree.insert("", END, "Location_%d"%LocationID, text=LocationName, tags="Location")
-			if not self.report_tree.exists("Sensor_%d"%SensorID):
-				self.report_tree.insert("Location_%d"%LocationID, END, "Sensor_%d"%SensorID, text=SensorName,tags="Sensor")		
-		c.close()
-		self.db.close()
 	
 	def get_report_types(self,event):
 		self.type_tree.delete(*self.type_tree.get_children())
@@ -756,6 +743,7 @@ class DataNumerical:
 		self.db.close()
 		
 	def generate_report(self):
+		"""Function to get report data from database and populate self.data_tree with results."""
 		#clear out data_tree
 		self.data_tree.delete(*self.data_tree.get_children())
 		

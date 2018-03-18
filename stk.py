@@ -131,6 +131,10 @@ class STK:
 		self.processfile=self.path+"/"+"process.log"
 		self.errorfile=self.path+"/"+"error.log"
 		self.dbfile=self.path+"/"+"stk.db"
+		
+		crashfile=self.path+"/"+"crash.log"
+		sys.stderr = open(crashfile, 'a')
+		
 		if not os.path.isfile(self.dbfile):
 			self.create_database()
 		

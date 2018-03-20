@@ -133,7 +133,7 @@ class STK:
 		self.dbfile=self.path+"/"+"stk.db"
 		
 		crashfile=self.path+"/"+"crash.log"
-		sys.stderr = open(crashfile, 'a')
+		#sys.stderr = open(crashfile, 'a')
 		
 		if not os.path.isfile(self.dbfile):
 			self.create_database()
@@ -508,15 +508,12 @@ class STK:
 				c.execute('''INSERT INTO grades VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
 				GradeID=c.lastrowid
 				self.log_process("Added missing grade %s %s"%(self.report['gradecode'],self.report['gradename']))
-		
-		#insert report here.  Do not do if learning
-		if not self.learning:
-			c.execute('''INSERT INTO reports VALUES (NULL,?,?,?,?)''', (self.report['timestamp'],ReportTypeID,LocationID,GradeID))
-			ReportID=c.lastrowid
-			self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))
+	
 		
 		#check/add sensor(s) and label(s) exists
 		for sensor in self.report['data']:
+			
+			#check if sensor exists
 			c.execute('''SELECT SensorID FROM sensors WHERE SensorName = ? and LocationID = ?''',(sensor['sensor'],LocationID))
 			result=c.fetchone()
 			if result:
@@ -528,14 +525,36 @@ class STK:
 			else:
 				self.db.commit()
 				self.log_error("Sensor %s missing from Database at location %s" % (sensor['sensor'],self.report['location']))
-				return
+				return			
+			
+			#check/add reportConfig exists
+			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
+			result=c.fetchone()
+			if result:
+				reportConfigID=result[0]
+			elif self.learning:
+				c.execute('''INSERT INTO reportConfigID VALUES (NULL,?,?,?)''', (SensorID,ReportTypeID,0))
+				ReportTypeID=c.lastrowid
+				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
+			elif not result:
+				self.log_error("Report %s %s %s missing from Database" % (sensor['sensor'],self.report['location'],self.report['name']))
+				self.db.commit()
+				return			
+			
+			
+			#insert report here.  Do not do if learning
+			if not self.learning:
+				c.execute('''INSERT INTO reports VALUES (NULL,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
+				ReportID=c.lastrowid
+				self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
+			
 			for i,label in enumerate(sensor['labels']):
-				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and SensorID = ?''',(label,SensorID))
+				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(label,ReportConfigID))
 				result=c.fetchone()
 				if result:
 					LabelID = result[0]
 				elif self.learning:
-					c.execute('''INSERT INTO labels VALUES (NULL,?,?)''', (label,SensorID))
+					c.execute('''INSERT INTO labels VALUES (NULL,?,?)''', (label,ReportConfigID))
 					LabelID=c.lastrowid
 					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
 				else:

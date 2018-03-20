@@ -552,8 +552,23 @@ class STK:
 	def create_database(self):
 		"""Method to create a blank database in the correct format.  Run if database does not exists"""
 		
-		#Placeholder for now
-		print "database does not exist"
+		tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.dbfile)
+		self.db = sqlite3.connect(self.dbfile)
+		c=self.db.cursor()		
+		c.execute("""CREATE TABLE 'grades' ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE 'labels' ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `SensorID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE 'locations' ( `LocationID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LocationName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE 'reportData' ( `ReportDataID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,`ReportID` INTEGER NOT NULL, `LabelID` INTEGER NOT NULL, `Value` NUMERIC NOT NULL )""")
+		c.execute("""CREATE TABLE 'reportTypes' ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE 'reports' ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportTypeID` INTEGER NOT NULL, `LocationID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE 'sensors' ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
+		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = labels.SensorID""")
+		c.execute("""CREATE VIEW v_reports AS SELECT ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode GradeName FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID""")
+		c.execute("""CREATE TABLE 'CONFIG' ( `MachineName` TEXT NOT NULL)""")
+		#c.execute("""*""")
+		self.db.commit()
+		self.db.close()
+		
 		
 
 class ReportConfig:

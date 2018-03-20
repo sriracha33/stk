@@ -798,7 +798,7 @@ class DataNumerical:
 			duration='-1 year'
 		elif filter==4:
 			enddate=date.today()
-			duration='-50 years'
+			duration=None
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")
@@ -817,8 +817,7 @@ class DataNumerical:
 			duration="-%s days"%days.days
 		
 		
-		self.db = sqlite3.connect(self.dbfile)
-		c=self.db.cursor()
+
 		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
@@ -831,6 +830,17 @@ class DataNumerical:
 		rtype=self.type_tree.selection()[0]
 		ReportTypeID=rtype.split("_")[1]
 		
+		self.db = sqlite3.connect(self.dbfile)
+		c=self.db.cursor()
+		
+		if not duration:
+			c.execute("""SELECT min(timestamp) from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=?""",(LocationID,SensorID,ReportTypeID))
+			results=c.fetchone()
+			if results:
+				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
+				days=enddate-startdate
+				duration="-%s days"%(days.days)
+			 
 		
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
 		results=c.fetchall()
@@ -851,7 +861,7 @@ class DataNumerical:
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=?""",(LocationID,SensorID,ReportTypeID,duration,enddate))
+		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,duration,enddate))
 		for ReportID,timestamp in c.fetchall():
 			c1=self.db.cursor()
 			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))

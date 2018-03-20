@@ -798,7 +798,7 @@ class DataNumerical:
 			duration='-1 year'
 		elif filter==4:
 			enddate=date.today()
-			duration='-10000 years'
+			duration='-50 years'
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")

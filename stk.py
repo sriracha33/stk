@@ -131,9 +131,12 @@ class STK:
 		self.processfile=self.path+"/"+"process.log"
 		self.errorfile=self.path+"/"+"error.log"
 		self.dbfile=self.path+"/"+"stk.db"
+		
+		crashfile=self.path+"/"+"crash.log"
+		sys.stderr = open(crashfile, 'a')
+		
 		if not os.path.isfile(self.dbfile):
 			self.create_database()
-		#check if db exists and if if not, offer to create it.
 		
 		#initialize configuration.  Later this will probably come from config file
 		self.config=Config(self.icon,self.dbfile)
@@ -203,8 +206,8 @@ class STK:
 		self.connectmenu.add_separator()
 		self.connectmenu.add_command(label='Refresh Ports', command=self.update_ports)
 	
-	#periodic function run to update time in GUI
 	def update_time(self):
+		"""Periodically called function run to update time in GUI"""
 		timestr=datetime.now().strftime('%I:%M:%S %p')
 		if timestr!=self.timetext['text']:
 			self.timetext['text']=timestr
@@ -253,17 +256,18 @@ class STK:
 	
 	
 	def analyze_numerical(self):
+		"""Function to load the Analyze Numerical window"""
 		if hasattr(self, 'an_win') and self.an_win.winfo_exists():
 			self.an_win.deiconify()
 			self.an_win.focus_force()
 			self.an_win.lift()
 			return
 		self.an_win = Toplevel()
-		#assignmentdoesn't seem to be needed here but it was for report_config_manual
-		self.an = DataNumerical(self.an_win,self.config)
+		DataNumerical(self.an_win,self.config)
 		
 	#function to open/close log file. One function to make tk binding easier
 	def open_logfile(self):
+		"""Function to open/close log file, depending on the current state"""
 		if self.logfile:
 			self.logfile.close()
 			self.logfile=None
@@ -276,10 +280,8 @@ class STK:
 			self.logfile=open(self.logfile,"wb")
 			self.filemenu.entryconfigure(0, label="Close Log File")
 	
-	#
 	def report_config_auto(self):
 		"""Function to learn report configuration from properly formatted log files."""
-		
 		tkMessageBox.showwarning("Select Valid Log File","When selecting a log file for learning it is vital to have only valid reports")
 		self.learning=True
 		self.process_logfile()
@@ -287,8 +289,7 @@ class STK:
 		
 		
 	def report_config_manual(self):
-		"""Function to create gui to manually configure reports.."""
-		
+		"""Function to create gui to manually configure reports."""
 		if hasattr(self, 'rc_win') and self.rc_win.winfo_exists():
 			self.rc_win.deiconify()
 			self.rc_win.focus_force()
@@ -585,12 +586,14 @@ class ReportConfig:
 		rt_lframe.columnconfigure(1, weight = 1)
 		rt_lframe.rowconfigure(0, weight = 1)
 		rt_lframe.rowconfigure(1, weight = 0)
-		Button(rt_lframe,text="Add Item",width=1).grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		Button(rt_lframe,text="Remove Item",width=1).grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		#report_tree=Treeview(rt_lframe,selectmode="browse")
+		structure_add_button=Button(rt_lframe,text="Add Item",width=1,state=DISABLED)
+		structure_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
+		structure_remove_button=Button(rt_lframe,text="Remove Item",width=1,state=DISABLED)
+		structure_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
 		report_tree=StructureTree(rt_lframe,config.dbfile)
 		report_tree.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
 		report_tree['show']='tree'
+		
 		
 		tt_lframe=LabelFrame(report_frame,text="Report Types")
 		tt_lframe.grid(column=0,row=1,sticky=W+E+N+S,padx=2)
@@ -598,11 +601,18 @@ class ReportConfig:
 		tt_lframe.columnconfigure(1, weight = 1)
 		tt_lframe.rowconfigure(0, weight = 1)
 		tt_lframe.rowconfigure(1, weight = 0)
-		Button(tt_lframe,text="Add Item",width=1).grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		Button(tt_lframe,text="Remove Item",width=1).grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		type_tree=Treeview(tt_lframe,selectmode="browse",height=5)
+		type_add_button=Button(tt_lframe,text="Add Item",width=1,state=DISABLED)
+		type_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
+		type_remove_button=Button(tt_lframe,text="Remove Item",width=1,state=DISABLED)
+		type_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
+		type_tree=ReportTypeTree(tt_lframe,self.dbfile)
+		type_tree['height']=5
 		type_tree.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
 		type_tree['show']='tree'
+		
+		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
+		report_tree.bind("<<TreeviewSelect>>",self.button_states,add="+")
+		
 		
 		self.source = IntVar(value=0)
 		rs_lframe=LabelFrame(report_frame,text="Report Source Type")
@@ -615,8 +625,47 @@ class ReportConfig:
 		Radiobutton(rs_lframe, text="Serial Datalogger", variable=self.source, value=0,anchor=W).grid(row=0,column=0,columnspan=2,sticky=W+E+N+S)
 		Radiobutton(rs_lframe, text="OPC Datalogger", variable=self.source, value=1,anchor=W).grid(row=1,column=0,columnspan=2,sticky=W+E+N+S)
 		Button(rs_lframe,text="Create New Report",command=self.create_report).grid(column=0,row=2,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		
+		
+		##Self Declarations##
+		self.type_tree=type_tree
+		self.type_add_button=type_add_button
+		self.type_remove_button=type_remove_button
+		self.structure_add_button=structure_add_button
+		self.structure_remove_button=structure_remove_button		
+	
+	def button_states(self,event):
+		"""Method that should be bound to run everytime ReportTypeTree is updated.  Sets the states of all the add/remove item buttons."""
+		#update type_tree modification button states
+		if self.type_tree.get_children(""):
+			self.type_add_button['state']='active'
+			self.type_remove_button['state']='active'
+		else:
+			self.type_add_button['state']='disabled'
+			self.type_remove_button['state']='disabled'
+		
+		#update type_tree modification button states
+		call_widget=event.widget
+		item=call_widget.selection()[0]
+		if call_widget.tag_has("Sensor",item):
+			self.structure_add_button['state']=DISABLED
+			self.structure_remove_button['state']=ACTIVE
+		elif call_widget.tag_has("Machine",item): #doesn't exists yet
+			self.structure_add_button['state']=ACTIVE
+			self.structure_remove_button['state']=DISABLED		
+		elif call_widget.tag_has("Location",item):
+			if call_widget.get_children(item):
+				self.structure_add_button['state']=ACTIVE
+				self.structure_remove_button['state']=DISABLED
+			else:
+				self.structure_add_button['state']=ACTIVE
+				self.structure_remove_button['state']=ACTIVE				
+		else:	#no selection.  should never happen
+			self.structure_add_button['state']=DISABLED
+			self.structure_remove_button['state']=DISABLE
 	
 	def create_report(self):
+		"""Placeholder for funtion which will generate the GUI for creating a new """
 		print self.source.get()
 		
 class DataNumerical:
@@ -665,6 +714,7 @@ class DataNumerical:
 		filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
 		filter_frame.pack(side=BOTTOM, fill=X)
 		filter_frame.pack_propagate(0)
+		#move code starting here to new class
 		filter_frame.columnconfigure(0, weight = 1)
 		filter_frame.columnconfigure(1, weight = 1)
 		Label(filter_frame,text="Filter",justify=LEFT).grid(row=0,column=0,columnspan=2,sticky=W+E+N+S)
@@ -683,18 +733,19 @@ class DataNumerical:
 		start_entry.grid(row=5,column=0)
 		end_entry=Entry(filter_frame, textvariable=self.filter_end,bg="white",state='disabled',justify='center')
 		end_entry.grid(row=5,column=1)
+		#move code ending here to new class
 		
-		
-		type_tree=Treeview(report_frame,selectmode="browse",height=3)
+		type_tree=ReportTypeTree(report_frame,self.dbfile)
+		type_tree.config(height=3)
 		type_tree.column("#0", minwidth=223,width=223,stretch=False)
 		type_tree.pack(side=BOTTOM,fill=X,anchor=S)
 		type_tree.heading("#0",text="Select Report Type")
 		
-		#report_tree=Treeview(report_frame,selectmode="browse")
 		report_tree=StructureTree(report_frame,self.dbfile)
 		report_tree.column("#0", minwidth=223,width=223,stretch=False)
 		report_tree.pack(side=BOTTOM,fill=Y,expand=True, anchor=S)
-		report_tree.bind("<<TreeviewSelect>>",self.get_report_types)
+		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
+		report_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")
 		report_tree.heading("#0",text="Select Sensor")
 
 		self.report_tree=report_tree
@@ -715,32 +766,11 @@ class DataNumerical:
 			self.start_entry.config(state='disabled')
 			self.end_entry.config(state='disabled')
 	
-	def get_report_types(self,event):
-		self.type_tree.delete(*self.type_tree.get_children())
-		self.db = sqlite3.connect(self.dbfile)
-		c=self.db.cursor()
-		item=self.report_tree.selection()[0]
-		if self.report_tree.tag_has("Location",item):
-			self.generate_button.config(state='disabled')
-		elif self.report_tree.tag_has("Sensor",item):
-			SensorID=item.split("_")[1]
-			LocationID=self.report_tree.parent(item).split("_")[1]
-			ReportTypeID=1
-			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_reportData WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
-			results=c.fetchall()
-			if not results:
-				self.generate_button.config(state='disabled')
-				c.close()
-				self.db.close()
-				return
-			for ReportTypeID,ReportTypeName in results:
-				self.type_tree.insert("", END, "ReportType_%d"%ReportTypeID, text=ReportTypeName)
-			self.type_tree.selection_set(self.type_tree.get_children("")[0])
-			self.generate_button.config(state='active')
+	def generate_button_state(self):
+		if self.type_tree.get_children(""):
+			self.generate_button['state']='active'
 		else:
-			tkMessageBox.showerror("Error","Invalid item tag")
-		c.close()
-		self.db.close()
+			self.generate_button['state']='disabled'
 		
 	def generate_report(self):
 		"""Function to get report data from database and populate self.data_tree with results."""
@@ -768,7 +798,7 @@ class DataNumerical:
 			duration='-1 year'
 		elif filter==4:
 			enddate=date.today()
-			duration='-10000 years'
+			duration=None
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")
@@ -787,8 +817,7 @@ class DataNumerical:
 			duration="-%s days"%days.days
 		
 		
-		self.db = sqlite3.connect(self.dbfile)
-		c=self.db.cursor()
+
 		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
@@ -801,8 +830,19 @@ class DataNumerical:
 		rtype=self.type_tree.selection()[0]
 		ReportTypeID=rtype.split("_")[1]
 		
+		self.db = sqlite3.connect(self.dbfile)
+		c=self.db.cursor()
 		
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
+		if not duration:
+			c.execute("""SELECT min(timestamp) from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=?""",(LocationID,SensorID,ReportTypeID))
+			results=c.fetchone()
+			if results:
+				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
+				days=enddate-startdate
+				duration="-%s days"%(days.days)
+			 
+		
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
 		results=c.fetchall()
 		if not results:
 			self.data_tree['show']='tree'
@@ -821,7 +861,7 @@ class DataNumerical:
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and timestamp<=?""",(LocationID,SensorID,ReportTypeID,duration,enddate))
+		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,duration,enddate))
 		for ReportID,timestamp in c.fetchall():
 			c1=self.db.cursor()
 			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))
@@ -855,14 +895,17 @@ class DataNumerical:
 				#print line
 	
 class StructureTree(Treeview):
+	
 	def __init__(self,parent,dbfile):
 		Treeview.__init__(self,parent,selectmode="browse")
 		self.column("#0",stretch=True)
-		self.update_structure(dbfile)
+		self.dbfile=dbfile
+		self.update_structure()
 		
-	def update_structure(self,dbfile):
+		
+	def update_structure(self):
 		self.delete(*self.get_children())
-		self.db = sqlite3.connect(dbfile)
+		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
 		c.execute("""SELECT DISTINCT LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName from v_reportData ORDER BY LocationName, ReportTypeName,SensorID""")
 		for LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName in c.fetchall():
@@ -875,6 +918,43 @@ class StructureTree(Treeview):
 				self.insert("Location_%d"%LocationID, END, "Sensor_%d"%SensorID, text=SensorName,tags="Sensor")		
 		c.close()
 		self.db.close()
+		
+class ReportTypeTree(Treeview):
+	
+	def __init__(self,parent,dbfile):
+		Treeview.__init__(self,parent,selectmode="browse")
+		self.dbfile=dbfile
+		self.column("#0",stretch=True)
+		
+	def update_reports(self,event):
+		"""Method to be bound to by StructureTree <<Selection>> event.  Populates the ReportTypeTree with available report types."""
+		self.delete(*self.get_children())
+		self.db = sqlite3.connect(self.dbfile)
+		c=self.db.cursor()
+		call_widget=event.widget
+		item=call_widget.selection()[0]
+		
+		if call_widget.tag_has("Sensor",item):
+			SensorID=item.split("_")[1]
+			LocationID=call_widget.parent(item).split("_")[1]
+			ReportTypeID=1
+			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_reportData WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
+			results=c.fetchall()
+			if not results:
+				self.generate_button.config(state='disabled')
+				c.close()
+				self.db.close()
+				return
+			for ReportTypeID,ReportTypeName in results:
+				self.insert("", END, "ReportType_%d"%ReportTypeID, text=ReportTypeName)
+			self.selection_set(self.get_children("")[0])
+		elif call_widget.tag_has("Location",item):
+			pass
+		else:
+			tkMessageBox.showerror("Error","Invalid item tag",parent=call_widget)
+		c.close()
+		self.db.close()
+	
 		
 class Config:
 	def __init__(self,icon,dbfile):

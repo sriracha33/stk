@@ -813,7 +813,7 @@ class DataNumerical:
 			duration='-1 year'
 		elif filter==4:
 			enddate=date.today()
-			duration='-10000 years'
+			duration='-50 years'
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")
@@ -847,7 +847,7 @@ class DataNumerical:
 		ReportTypeID=rtype.split("_")[1]
 		
 		
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
 		results=c.fetchall()
 		if not results:
 			self.data_tree['show']='tree'
@@ -866,7 +866,7 @@ class DataNumerical:
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and timestamp<=?""",(LocationID,SensorID,ReportTypeID,duration,enddate))
+		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=?""",(LocationID,SensorID,ReportTypeID,duration,enddate))
 		for ReportID,timestamp in c.fetchall():
 			c1=self.db.cursor()
 			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))

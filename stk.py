@@ -133,7 +133,7 @@ class STK:
 		self.dbfile=self.path+"/"+"stk.db"
 		
 		crashfile=self.path+"/"+"crash.log"
-		#sys.stderr = open(crashfile, 'a')
+		sys.stderr = open(crashfile, 'a')
 		
 		if not os.path.isfile(self.dbfile):
 			self.create_database()
@@ -531,10 +531,10 @@ class STK:
 			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
 			result=c.fetchone()
 			if result:
-				reportConfigID=result[0]
+				ReportConfigID=result[0]
 			elif self.learning:
-				c.execute('''INSERT INTO reportConfigID VALUES (NULL,?,?,?)''', (SensorID,ReportTypeID,0))
-				ReportTypeID=c.lastrowid
+				c.execute('''INSERT INTO reportConfig VALUES (NULL,?,?,?)''', (SensorID,ReportTypeID,0))
+				ReportConfigID=c.lastrowid
 				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
 			elif not result:
 				self.log_error("Report %s %s %s missing from Database" % (sensor['sensor'],self.report['location'],self.report['name']))
@@ -544,7 +544,7 @@ class STK:
 			
 			#insert report here.  Do not do if learning
 			if not self.learning:
-				c.execute('''INSERT INTO reports VALUES (NULL,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
+				c.execute('''INSERT INTO reports VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
 				ReportID=c.lastrowid
 				self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
 			
@@ -562,7 +562,7 @@ class STK:
 					self.log_error("Label %s missing from Database in location %s, sensor %s" % (label,self.report['location'],sensor['sensor']))
 					return
 				if not self.learning:
-					c.execute('''INSERT INTO reportData VALUES (?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
+					c.execute('''INSERT INTO reportData VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
 				
 		#commit and close every time. Most of the time we process 1-2 reports at a time.
 		self.db.commit()

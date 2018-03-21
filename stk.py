@@ -16,9 +16,11 @@ import csv
 def main():
 	
 	stk=STK()
-				
-	stk.t.focus_force()
-	mainloop()				
+	try:
+		stk.t.focus_force()
+	except:
+		return
+	mainloop()
 	
 class STK:
 	def __init__(self):
@@ -133,7 +135,7 @@ class STK:
 		self.dbfile=self.path+"/"+"stk.db"
 		
 		crashfile=self.path+"/"+"crash.log"
-		sys.stderr = open(crashfile, 'a')
+		#sys.stderr = open(crashfile, 'a')
 		
 		if not os.path.isfile(self.dbfile):
 			self.create_database()
@@ -152,8 +154,24 @@ class STK:
 		
 		#config
 		self.maxrows=500
+		self.dbversion="1.0"
 		#add serial parameters here
-				
+		
+		#check if db version matches STK version
+		db=sqlite3.connect(self.dbfile)
+		c=db.cursor()
+		c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
+		result=c.fetchone()
+		if result is not None:
+			version=result[0]
+		else:
+			version=""
+		if version!=self.dbversion:
+			tkMessageBox.showerror("Database Mismatch","Database version does not match application version.")
+			db.close()
+			self.root.destroy()
+			return
+		
 		###Startup Functions###
 		self.update_ports()
 		self.update_time()
@@ -467,6 +485,17 @@ class STK:
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
 		
+		#check if machinename is set. Offer to set it if not. Only for learning.
+		if self.learning:
+			c.execute('''SELECT MachineName FROM config WHERE rowid = 1''')
+			result=c.fetchone()
+			if result is not None:
+				name=result[0]
+				if name is None:
+					response=tkMessageBox.askyesno("Add Machine Name?","Machine name has not been set.\nWould you like to update name to:\n%s?"%self.report['machine'])
+					if response:
+						c.execute('''UPDATE config SET MachineName=? WHERE rowid = 1''',(self.report['machine'],))
+		
 		#check/add reportType exists
 		c.execute('''SELECT reportTypeID FROM reportTypes WHERE ReportTypeName = ?''',(self.report['name'],))
 		result=c.fetchone()
@@ -582,9 +611,9 @@ class STK:
 		c.execute("""CREATE TABLE 'reports' ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportTypeID` INTEGER NOT NULL, `LocationID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
 		c.execute("""CREATE TABLE 'sensors' ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
 		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = labels.SensorID""")
-		c.execute("""CREATE VIEW v_reports AS SELECT ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode GradeName FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID""")
+		#c.execute("""CREATE VIEW v_reports AS SELECT ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode GradeName FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID""")
 		c.execute("""CREATE TABLE 'CONFIG' ( `MachineName` TEXT NOT NULL)""")
-		#c.execute("""*""")
+		#add version info to config table
 		self.db.commit()
 		self.db.close()
 		
@@ -941,8 +970,8 @@ class StructureTree(Treeview):
 		self.delete(*self.get_children())
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
-		c.execute("""SELECT DISTINCT LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName from v_reportData ORDER BY LocationName, ReportTypeName,SensorID""")
-		for LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName in c.fetchall():
+		c.execute("""SELECT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName, ReportTypeName,SensorID""")
+		for LocationID,LocationName,SensorID,SensorName in c.fetchall():
 			LocationLabel="Location_%d"%LocationID
 			ReportTypeLabel="Location_%d"%LocationID
 			LocationLabel="Location_%d"%LocationID
@@ -972,7 +1001,7 @@ class ReportTypeTree(Treeview):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
 			ReportTypeID=1
-			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_reportData WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
+			c.execute("""SELECT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
 				self.generate_button.config(state='disabled')

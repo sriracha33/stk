@@ -508,15 +508,12 @@ class STK:
 				c.execute('''INSERT INTO grades VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
 				GradeID=c.lastrowid
 				self.log_process("Added missing grade %s %s"%(self.report['gradecode'],self.report['gradename']))
-		
-		#insert report here.  Do not do if learning
-		if not self.learning:
-			c.execute('''INSERT INTO reports VALUES (NULL,?,?,?,?)''', (self.report['timestamp'],ReportTypeID,LocationID,GradeID))
-			ReportID=c.lastrowid
-			self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))
+	
 		
 		#check/add sensor(s) and label(s) exists
 		for sensor in self.report['data']:
+			
+			#check if sensor exists
 			c.execute('''SELECT SensorID FROM sensors WHERE SensorName = ? and LocationID = ?''',(sensor['sensor'],LocationID))
 			result=c.fetchone()
 			if result:
@@ -528,14 +525,36 @@ class STK:
 			else:
 				self.db.commit()
 				self.log_error("Sensor %s missing from Database at location %s" % (sensor['sensor'],self.report['location']))
-				return
+				return			
+			
+			#check/add reportConfig exists
+			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
+			result=c.fetchone()
+			if result:
+				ReportConfigID=result[0]
+			elif self.learning:
+				c.execute('''INSERT INTO reportConfig VALUES (NULL,?,?,?)''', (SensorID,ReportTypeID,0))
+				ReportConfigID=c.lastrowid
+				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
+			elif not result:
+				self.log_error("Report %s %s %s missing from Database" % (sensor['sensor'],self.report['location'],self.report['name']))
+				self.db.commit()
+				return			
+			
+			
+			#insert report here.  Do not do if learning
+			if not self.learning:
+				c.execute('''INSERT INTO reports VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
+				ReportID=c.lastrowid
+				self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
+			
 			for i,label in enumerate(sensor['labels']):
-				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and SensorID = ?''',(label,SensorID))
+				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(label,ReportConfigID))
 				result=c.fetchone()
 				if result:
 					LabelID = result[0]
 				elif self.learning:
-					c.execute('''INSERT INTO labels VALUES (NULL,?,?)''', (label,SensorID))
+					c.execute('''INSERT INTO labels VALUES (NULL,?,?)''', (label,ReportConfigID))
 					LabelID=c.lastrowid
 					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
 				else:
@@ -543,7 +562,7 @@ class STK:
 					self.log_error("Label %s missing from Database in location %s, sensor %s" % (label,self.report['location'],sensor['sensor']))
 					return
 				if not self.learning:
-					c.execute('''INSERT INTO reportData VALUES (?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
+					c.execute('''INSERT INTO reportData VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
 				
 		#commit and close every time. Most of the time we process 1-2 reports at a time.
 		self.db.commit()
@@ -813,7 +832,7 @@ class DataNumerical:
 			duration='-1 year'
 		elif filter==4:
 			enddate=date.today()
-			duration='-50 years'
+			duration=None
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")
@@ -832,8 +851,7 @@ class DataNumerical:
 			duration="-%s days"%days.days
 		
 		
-		self.db = sqlite3.connect(self.dbfile)
-		c=self.db.cursor()
+
 		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
@@ -846,6 +864,17 @@ class DataNumerical:
 		rtype=self.type_tree.selection()[0]
 		ReportTypeID=rtype.split("_")[1]
 		
+		self.db = sqlite3.connect(self.dbfile)
+		c=self.db.cursor()
+		
+		if not duration:
+			c.execute("""SELECT min(timestamp) from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=?""",(LocationID,SensorID,ReportTypeID))
+			results=c.fetchone()
+			if results:
+				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
+				days=enddate-startdate
+				duration="-%s days"%(days.days)
+			 
 		
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
 		results=c.fetchall()
@@ -866,7 +895,7 @@ class DataNumerical:
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=?""",(LocationID,SensorID,ReportTypeID,duration,enddate))
+		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,duration,enddate))
 		for ReportID,timestamp in c.fetchall():
 			c1=self.db.cursor()
 			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))

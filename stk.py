@@ -161,6 +161,7 @@ class STK:
 		#check if db version matches STK version
 		db=sqlite3.connect(self.dbfile)
 		c=db.cursor()
+		
 		c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
 		result=c.fetchone()
 		if result is not None:
@@ -169,8 +170,7 @@ class STK:
 			version=""
 		if version!=self.dbversion:
 			tkMessageBox.showerror("Database Mismatch","Database version does not match application version.")
-			db.close()
-			self.root.destroy()
+			self.exit(confirm=False)
 			return
 		
 		###Startup Functions###
@@ -178,7 +178,7 @@ class STK:
 		self.update_time()
 	
 	#function run when window closed from any way except File->Exit
-	#uncomment one line and comment the other.  For testing its easier if the X closes the program
+	
 	def on_closing(self):
 		if True:
 			if hasattr(self, 'an_win') and self.an_win.winfo_exists():
@@ -192,9 +192,10 @@ class STK:
 		self.exit()
 	
 	#function which runs on exit which makes sure everything is closed out.
-	def exit(self):
-		if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
-			return
+	def exit(self,confirm=True):
+		if confirm:
+			if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
+				return
 		try:
 			self.db.close()
 		except:
@@ -503,7 +504,7 @@ class STK:
 		if result:
 			ReportTypeID=result[0]
 		elif self.learning:
-			c.execute('''INSERT INTO reportTypes VALUES (NULL,?)''', (self.report['name'],))
+			c.execute('''INSERT INTO reportTypes (ReportTypeID, ReportTypeName) VALUES (NULL,?)''', (self.report['name'],))
 			ReportTypeID=c.lastrowid
 			self.log_process("New report type %s added to database"%self.report['name'])
 		elif not result:
@@ -517,7 +518,7 @@ class STK:
 		if result:
 			LocationID=result[0]
 		elif self.learning:
-			c.execute('''INSERT INTO locations VALUES (NULL,?)''', (self.report['location'],))
+			c.execute('''INSERT INTO locations (LocationID, LocationName) VALUES (NULL,?)''', (self.report['location'],))
 			LocationID=c.lastrowid
 			self.log_process("New location %s added to database"%self.report['location'])
 		else:
@@ -535,7 +536,7 @@ class STK:
 					c.execute('''UPDATE grades SET GradeName=? WHERE GradeID = ?''',(self.report['gradename'],GradeID))
 					self.log_process("Updated grade %s name from %s to %s"%(self.report['gradecode'],result[1],self.report['gradename']))
 			else:
-				c.execute('''INSERT INTO grades VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
+				c.execute('''INSERT INTO grades (GradeID, GradeCode, GradeName) VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
 				GradeID=c.lastrowid
 				self.log_process("Added missing grade %s %s"%(self.report['gradecode'],self.report['gradename']))
 	
@@ -549,7 +550,7 @@ class STK:
 			if result:
 				SensorID = result[0]
 			elif self.learning:
-				c.execute('''INSERT INTO sensors VALUES (NULL,?,?)''', (sensor['sensor'],LocationID))
+				c.execute('''INSERT INTO sensors (SensorID,SensorName,LocationID) VALUES (NULL,?,?)''', (sensor['sensor'],LocationID))
 				SensorID=c.lastrowid
 				self.log_process("New sensor %s at location %s added to database"%(sensor['sensor'],self.report['location']))
 			else:
@@ -563,7 +564,7 @@ class STK:
 			if result:
 				ReportConfigID=result[0]
 			elif self.learning:
-				c.execute('''INSERT INTO reportConfig VALUES (NULL,?,?,?)''', (SensorID,ReportTypeID,0))
+				c.execute('''INSERT INTO reportConfig (ReportConfigID, SensorID, ReportTypeID, ReportSource, Active, TriggerTagID) VALUES (NULL,?,?,0,1,NULL)''', (SensorID,ReportTypeID))
 				ReportConfigID=c.lastrowid
 				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
 			elif not result:
@@ -574,7 +575,7 @@ class STK:
 			
 			#insert report here.  Do not do if learning
 			if not self.learning:
-				c.execute('''INSERT INTO reports VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
+				c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
 				ReportID=c.lastrowid
 				self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
 			
@@ -584,7 +585,7 @@ class STK:
 				if result:
 					LabelID = result[0]
 				elif self.learning:
-					c.execute('''INSERT INTO labels VALUES (NULL,?,?)''', (label,ReportConfigID))
+					c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL)''', (label,ReportConfigID))
 					LabelID=c.lastrowid
 					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
 				else:
@@ -592,7 +593,7 @@ class STK:
 					self.log_error("Label %s missing from Database in location %s, sensor %s" % (label,self.report['location'],sensor['sensor']))
 					return
 				if not self.learning:
-					c.execute('''INSERT INTO reportData VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
+					c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
 				
 		#commit and close every time. Most of the time we process multple reports at a time.
 		self.db.commit()
@@ -611,16 +612,16 @@ class STK:
 		c=self.db.cursor()		
 		c.execute("""CREATE TABLE "config" ( `DatabaseVersion` TEXT NOT NULL, `MachineName` TEXT DEFAULT NULL, `CustomerName` TEXT DEFAULT NULL, `CustomerLocation` TEXT DEFAULT NULL )""")
 		c.execute("""CREATE TABLE "grades" ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
-		c.execute("""CREATE TABLE "labels" ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE "labels" ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL , TagID TEXT DEFAULT NULL)""")
 		c.execute("""CREATE TABLE "locations" ( `LocationID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LocationName` TEXT NOT NULL )""")
-		c.execute("""CREATE TABLE "reportConfig" ( `ReportConfigID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorID` INTEGER NOT NULL, `ReportTypeID` INTEGER, `ReportSource` INTEGER )""")
+		c.execute("""CREATE TABLE "reportConfig" ( `ReportConfigID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorID` INTEGER NOT NULL, `ReportTypeID` INTEGER, `ReportSource` INTEGER , Active INTEGER DEFAULT 1, TriggerTagID INTEGER DEFAULT NULL)""")
 		c.execute("""CREATE TABLE "reportData" ( `ReportDataID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportID` INTEGER NOT NULL, `LabelID` INTEGER NOT NULL, `Value` NUMERIC NOT NULL )""")
 		c.execute("""CREATE TABLE "reportTypes" ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
 		c.execute("""CREATE TABLE "reports" ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
 		c.execute("""CREATE TABLE "sensors" ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
 		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportTypeID as ReportTypeID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
-		c.execute("""CREATE VIEW v_structure AS SELECT locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
-		c.execute("""INSERT INTO config VALUES (?,NULL,NULL,NULL)""",(self.dbversion,))
+		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
+		c.execute("""INSERT INTO config (DatabaseVersion, MachineName, CustomerName, CustomerLocation) VALUES (?,NULL,NULL,NULL)""",(self.dbversion,))
 		self.db.commit()
 		self.db.close()
 		
@@ -906,10 +907,12 @@ class DataNumerical:
 		if not duration:
 			c.execute("""SELECT min(timestamp) from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=?""",(LocationID,SensorID,ReportTypeID))
 			results=c.fetchone()
-			if results:
+			if results[0]:
 				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
 				days=enddate-startdate
 				duration="-%s days"%(days.days+1)
+			else:
+				duration="-1 days"
 			 
 		
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
@@ -986,7 +989,7 @@ class StructureTree(Treeview):
 		
 		self.insert("", END, MachineName, text=MachineName, tags="Machine",open=True)
 		
-		c.execute("""SELECT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName, ReportTypeName,SensorID""")
+		c.execute("""SELECT DISTINCT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName, ReportTypeName,SensorID""")
 		for LocationID,LocationName,SensorID,SensorName in c.fetchall():
 			LocationLabel="Location_%d"%LocationID
 			ReportTypeLabel="Location_%d"%LocationID
@@ -1018,7 +1021,7 @@ class ReportTypeTree(Treeview):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
 			ReportTypeID=1
-			c.execute("""SELECT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
+			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
 				self.generate_button.config(state='disabled')

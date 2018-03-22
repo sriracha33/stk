@@ -638,9 +638,12 @@ class ReportConfig:
 		self.win.geometry("800x600")
 		self.win.minsize(800,600)
 		
-		#split window into two frames
-		report_frame=Frame(self.win, width=270)
-		report_frame.pack(fill=Y, side=LEFT)
+		#split window into two panes
+		paned=PanedWindow(self.win,orient=HORIZONTAL)
+		paned.pack(fill=BOTH,expand=1)
+		
+		report_frame=Frame(paned, width=270)
+		paned.add(report_frame, minsize=270)
 		report_frame.grid_propagate(0)
 		report_frame.columnconfigure(0, weight = 1)
 		report_frame.columnconfigure(1, weight = 0)
@@ -648,8 +651,8 @@ class ReportConfig:
 		report_frame.rowconfigure(1, weight = 0)
 		report_frame.rowconfigure(2, weight = 0)
 		
-		data_frame=LabelFrame(self.win,text="Report Configuration")
-		data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
+		data_frame=LabelFrame(paned,text="Report Configuration")
+		paned.add(data_frame)
 		
 		rt_lframe=LabelFrame(report_frame,text="Machine Structure")
 		rt_lframe.grid(column=0,row=0,sticky=W+E+N+S,padx=2)
@@ -661,10 +664,15 @@ class ReportConfig:
 		structure_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
 		structure_remove_button=Button(rt_lframe,text="Remove Item",width=1,state=DISABLED)
 		structure_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		report_tree=StructureTree(rt_lframe,config.dbfile)
-		report_tree.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		rt_sframe=Frame(rt_lframe)
+		rt_sframe.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		rt_vscroll = Scrollbar(rt_sframe)
+		rt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)			
+		report_tree=StructureTree(rt_sframe,config.dbfile)
+		report_tree.pack(side=BOTTOM, fill=BOTH, expand=True)
 		report_tree['show']='tree'
-		
+		rt_vscroll.config(command=report_tree.yview)
+		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
 		tt_lframe=LabelFrame(report_frame,text="Report Types")
 		tt_lframe.grid(column=0,row=1,sticky=W+E+N+S,padx=2)
@@ -676,10 +684,17 @@ class ReportConfig:
 		type_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
 		type_remove_button=Button(tt_lframe,text="Remove Item",width=1,state=DISABLED)
 		type_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		type_tree=ReportTypeTree(tt_lframe,self.dbfile)
+		tt_sframe=Frame(tt_lframe)
+		tt_sframe.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		tt_vscroll = Scrollbar(tt_sframe)
+		tt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)							
+		type_tree=ReportTypeTree(tt_sframe,self.dbfile)
 		type_tree['height']=5
-		type_tree.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		type_tree.pack(side=BOTTOM, fill=BOTH, expand=True)
 		type_tree['show']='tree'
+		tt_vscroll.config(command=type_tree.yview)
+		type_tree.configure(yscrollcommand=tt_vscroll.set)		
+			
 		
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",self.button_states,add="+")
@@ -750,12 +765,17 @@ class DataNumerical:
 		self.an_win.geometry("800x600")
 		self.an_win.minsize(800,600)
 		
-		#split window into two frames
-		report_frame=Frame(self.an_win, width=225)
-		report_frame.pack(fill=Y, side=LEFT)
+		#split window into two panes
+		paned=PanedWindow(self.an_win,orient=HORIZONTAL)
+		paned.pack(fill=BOTH,expand=1)		
+		
+		report_frame=Frame(paned)
+		paned.add(report_frame, minsize=250, padx=2)
+		#report_frame.pack(fill=Y, side=LEFT)
 		report_frame.pack_propagate(0)
-		data_frame=Frame(self.an_win)
-		data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
+		data_frame=Frame(paned)
+		paned.add(data_frame, padx=2)
+		#data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
 		
 		#data frame
 		data_tree=Treeview(data_frame,selectmode="browse", show="tree")
@@ -782,42 +802,56 @@ class DataNumerical:
 		self.filter_start = StringVar()
 		self.filter_end = StringVar()
 		
-		filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
-		filter_frame.pack(side=BOTTOM, fill=X)
+		#filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
+		ff_lframe=LabelFrame(report_frame,text="Time Filter")
+		ff_lframe.pack(side=BOTTOM, fill=X)
+		filter_frame=Frame(ff_lframe,width=225,height=200)
+		filter_frame.pack(side=BOTTOM, fill=BOTH, padx=2, pady=2)
 		filter_frame.pack_propagate(0)
 		#move code starting here to new class
 		filter_frame.columnconfigure(0, weight = 1)
 		filter_frame.columnconfigure(1, weight = 1)
-		Label(filter_frame,text="Filter",justify=LEFT).grid(row=0,column=0,columnspan=2,sticky=W+E+N+S)
-		Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,bg="white",command=self.change_filter).grid(row=1,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,bg="white",command=self.change_filter).grid(row=1,column=1,sticky=W)
-		Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,bg="white",command=self.change_filter).grid(row=2,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,bg="white",command=self.change_filter).grid(row=2,column=1,sticky=W)
-		Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,bg="white",command=self.change_filter).grid(row=3,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,bg="white",command=self.change_filter).grid(row=3,column=1,sticky=W)
+		Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,command=self.change_filter).grid(row=1,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,command=self.change_filter).grid(row=1,column=1,sticky=W)
+		Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,command=self.change_filter).grid(row=2,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,command=self.change_filter).grid(row=2,column=1,sticky=W)
+		Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,command=self.change_filter).grid(row=3,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,command=self.change_filter).grid(row=3,column=1,sticky=W)
 		self.filter_select.set(0)
 		self.filter_start.set((datetime.now()-timedelta(days=7)).strftime("%Y-%m-%d %H:%M"))
 		self.filter_end.set(datetime.now().strftime("%Y-%m-%d %H:%M"))
-		Label(filter_frame, text="Start",bg="white").grid(row=4,column=0)
-		Label(filter_frame, text="End",bg="white").grid(row=4,column=1)
+		Label(filter_frame, text="Start").grid(row=4,column=0)
+		Label(filter_frame, text="End").grid(row=4,column=1)
 		start_entry=Entry(filter_frame, textvariable=self.filter_start,bg="white",state='disabled',justify='center')
 		start_entry.grid(row=5,column=0)
 		end_entry=Entry(filter_frame, textvariable=self.filter_end,bg="white",state='disabled',justify='center')
 		end_entry.grid(row=5,column=1)
 		#move code ending here to new class
 		
-		type_tree=ReportTypeTree(report_frame,self.dbfile)
-		type_tree.config(height=3)
-		type_tree.column("#0", minwidth=223,width=223,stretch=False)
-		type_tree.pack(side=BOTTOM,fill=X,anchor=S)
-		type_tree.heading("#0",text="Select Report Type")
+		tt_lframe=LabelFrame(report_frame,text="Report Types")
+		tt_lframe.pack(side=BOTTOM, fill=X)		
+		tt_vscroll = Scrollbar(tt_lframe)
+		tt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)			
+		type_tree=ReportTypeTree(tt_lframe,self.dbfile)
+		tt_lframe.pack(side=BOTTOM, fill=BOTH)		
+		type_tree.config(height=5)
+		type_tree.column("#0",stretch=True)
+		type_tree.pack(side=BOTTOM,fill=X,anchor=S, padx=2, pady=2)
+		tt_vscroll.config(command=type_tree.yview)
+		type_tree.configure(yscrollcommand=tt_vscroll.set)		
 		
-		report_tree=StructureTree(report_frame,self.dbfile)
-		report_tree.column("#0", minwidth=223,width=223,stretch=False)
-		report_tree.pack(side=BOTTOM,fill=Y,expand=True, anchor=S)
+		rt_lframe=LabelFrame(report_frame,text="Machine Structure")
+		rt_lframe.pack(side=BOTTOM, fill=BOTH, expand=True)	
+		rt_vscroll = Scrollbar(rt_lframe)
+		rt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)				
+		report_tree=StructureTree(rt_lframe,self.dbfile)
+		report_tree.column("#0",stretch=True)
+		report_tree.pack(side=LEFT,fill=BOTH,expand=True, anchor=S, padx=2, pady=2)
+		rt_vscroll.config(command=report_tree.yview)
+		report_tree.configure(yscrollcommand=rt_vscroll.set)		
+		
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")
-		report_tree.heading("#0",text="Select Sensor")
 
 		self.report_tree=report_tree
 		self.type_tree=type_tree
@@ -956,7 +990,7 @@ class DataNumerical:
 class StructureTree(Treeview):
 	
 	def __init__(self,parent,dbfile):
-		Treeview.__init__(self,parent,selectmode="browse")
+		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.column("#0",stretch=True)
 		self.dbfile=dbfile
 		self.update_structure()
@@ -993,7 +1027,7 @@ class StructureTree(Treeview):
 class ReportTypeTree(Treeview):
 	
 	def __init__(self,parent,dbfile):
-		Treeview.__init__(self,parent,selectmode="browse")
+		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.dbfile=dbfile
 		self.column("#0",stretch=True)
 		

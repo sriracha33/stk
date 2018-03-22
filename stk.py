@@ -136,12 +136,7 @@ class STK:
 		
 		crashfile=self.path+"/"+"crash.log"
 		#sys.stderr = open(crashfile, 'a')
-		
-		if not os.path.isfile(self.dbfile):
-			self.create_database()
-		
-		#initialize configuration.  Later this will probably come from config file
-		self.config=Config(self.icon,self.dbfile)
+
 		
 		#initialize other variables
 		self.report={}
@@ -156,6 +151,12 @@ class STK:
 		self.maxrows=500
 		self.dbversion="1.0"
 		#add serial parameters here
+		
+		if not os.path.isfile(self.dbfile):
+			self.create_database()		
+		
+		#initialize configuration.  Later this will probably come from config file
+		self.config=Config(self.icon,self.dbfile)		
 		
 		#check if db version matches STK version
 		db=sqlite3.connect(self.dbfile)
@@ -593,27 +594,33 @@ class STK:
 				if not self.learning:
 					c.execute('''INSERT INTO reportData VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
 				
-		#commit and close every time. Most of the time we process 1-2 reports at a time.
+		#commit and close every time. Most of the time we process multple reports at a time.
 		self.db.commit()
 		self.db.close()
 		
 	def create_database(self):
 		"""Method to create a blank database in the correct format.  Run if database does not exists"""
+		answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for the correct database?")
+		if answer:
+			dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
+			self.dbfile=dbfile
+			return		
 		
 		tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.dbfile)
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()		
-		c.execute("""CREATE TABLE 'grades' ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
-		c.execute("""CREATE TABLE 'labels' ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `SensorID` INTEGER NOT NULL )""")
-		c.execute("""CREATE TABLE 'locations' ( `LocationID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LocationName` TEXT NOT NULL )""")
-		c.execute("""CREATE TABLE 'reportData' ( `ReportDataID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,`ReportID` INTEGER NOT NULL, `LabelID` INTEGER NOT NULL, `Value` NUMERIC NOT NULL )""")
-		c.execute("""CREATE TABLE 'reportTypes' ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
-		c.execute("""CREATE TABLE 'reports' ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportTypeID` INTEGER NOT NULL, `LocationID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
-		c.execute("""CREATE TABLE 'sensors' ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
-		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = labels.SensorID""")
-		#c.execute("""CREATE VIEW v_reports AS SELECT ReportID, timestamp, reports.ReportTypeID as ReportTypeID, ReportTypeName, reports.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode GradeName FROM reports INNER JOIN reportTypes ON reportTypes.ReportTypeID = reports.ReportTypeID INNER JOIN locations ON locations.LocationID = reports.LocationID INNER JOIN grades ON grades.GradeID = reports.GradeID""")
-		c.execute("""CREATE TABLE 'CONFIG' ( `MachineName` TEXT NOT NULL)""")
-		#add version info to config table
+		c.execute("""CREATE TABLE "config" ( `DatabaseVersion` TEXT NOT NULL, `MachineName` TEXT DEFAULT NULL, `CustomerName` TEXT DEFAULT NULL, `CustomerLocation` TEXT DEFAULT NULL )""")
+		c.execute("""CREATE TABLE "grades" ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE "labels" ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE "locations" ( `LocationID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LocationName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE "reportConfig" ( `ReportConfigID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorID` INTEGER NOT NULL, `ReportTypeID` INTEGER, `ReportSource` INTEGER )""")
+		c.execute("""CREATE TABLE "reportData" ( `ReportDataID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportID` INTEGER NOT NULL, `LabelID` INTEGER NOT NULL, `Value` NUMERIC NOT NULL )""")
+		c.execute("""CREATE TABLE "reportTypes" ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE "reports" ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE "sensors" ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
+		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportTypeID as ReportTypeID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
+		c.execute("""CREATE VIEW v_structure AS SELECT locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
+		c.execute("""INSERT INTO config VALUES (?,NULL,NULL,NULL)""",(self.dbversion,))
 		self.db.commit()
 		self.db.close()
 		
@@ -902,7 +909,7 @@ class DataNumerical:
 			if results:
 				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
 				days=enddate-startdate
-				duration="-%s days"%(days.days)
+				duration="-%s days"%(days.days+1)
 			 
 		
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
@@ -948,14 +955,12 @@ class DataNumerical:
 		with open(outfile, 'wb') as csvfile:
 			writer = csv.writer(csvfile, delimiter=',')
 			writer.writerow(timestamp + list(self.data_tree['columns']))
-			#print ".".join(self.data_tree['columns'])
 			for report in self.data_tree.get_children():
 				timestamp=[]
 				timestamp.append(self.data_tree.item(report)['text'])
 				row=list(str(x) for x in self.data_tree.item(report)['values'])
 				line=','.join(timestamp+row)
 				writer.writerow(timestamp+row)
-				#print line
 	
 class StructureTree(Treeview):
 	
@@ -970,13 +975,25 @@ class StructureTree(Treeview):
 		self.delete(*self.get_children())
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
+		c.execute("""SELECT MachineName FROM config WHERE rowid=1""")
+		result=c.fetchone()
+		if result is not None:
+			result=result[0]
+		if result is not None:
+			MachineName=result
+		else:
+			MachineName="MACHINE"
+		
+		self.insert("", END, MachineName, text=MachineName, tags="Machine",open=True)
+		
 		c.execute("""SELECT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName, ReportTypeName,SensorID""")
 		for LocationID,LocationName,SensorID,SensorName in c.fetchall():
 			LocationLabel="Location_%d"%LocationID
 			ReportTypeLabel="Location_%d"%LocationID
 			LocationLabel="Location_%d"%LocationID
 			if not self.exists("Location_%d"%LocationID):
-				self.insert("", END, "Location_%d"%LocationID, text=LocationName, tags="Location")
+				#self.insert("", END, "Location_%d"%LocationID, text=LocationName, tags="Location")
+				self.insert(MachineName, END, "Location_%d"%LocationID, text=LocationName, tags="Location")
 			if not self.exists("Sensor_%d"%SensorID):
 				self.insert("Location_%d"%LocationID, END, "Sensor_%d"%SensorID, text=SensorName,tags="Sensor")		
 		c.close()
@@ -1013,6 +1030,8 @@ class ReportTypeTree(Treeview):
 			self.selection_set(self.get_children("")[0])
 		elif call_widget.tag_has("Location",item):
 			pass
+		elif call_widget.tag_has("Machine",item):
+			pass		
 		else:
 			tkMessageBox.showerror("Error","Invalid item tag",parent=call_widget)
 		c.close()

@@ -918,6 +918,7 @@ class DataNumerical:
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
 		results=c.fetchall()
 		if not results:
+			self.data_tree.insert("",END,text="No data found")
 			self.data_tree['show']='tree'
 			self.csv_button.config(state='disabled')
 			return
@@ -929,7 +930,7 @@ class DataNumerical:
 		self.data_tree.column("#0",width=160)
 		self.data_tree.heading("#0",text="TIMESTAMP")
 		for LabelName in LabelNames:
-			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.5)
+			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.25)
 			w=max(w,75)
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
@@ -989,7 +990,7 @@ class StructureTree(Treeview):
 		
 		self.insert("", END, MachineName, text=MachineName, tags="Machine",open=True)
 		
-		c.execute("""SELECT DISTINCT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName, ReportTypeName,SensorID""")
+		c.execute("""SELECT DISTINCT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName,SensorID""")
 		for LocationID,LocationName,SensorID,SensorName in c.fetchall():
 			LocationLabel="Location_%d"%LocationID
 			ReportTypeLabel="Location_%d"%LocationID
@@ -1021,7 +1022,7 @@ class ReportTypeTree(Treeview):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
 			ReportTypeID=1
-			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
+			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
 				self.generate_button.config(state='disabled')

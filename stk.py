@@ -789,15 +789,15 @@ class DataNumerical:
 		filter_frame.columnconfigure(0, weight = 1)
 		filter_frame.columnconfigure(1, weight = 1)
 		Label(filter_frame,text="Filter",justify=LEFT).grid(row=0,column=0,columnspan=2,sticky=W+E+N+S)
-		Radiobutton(filter_frame, text="Last 5 days", variable=self.filter_select, value=0,bg="white",command=self.change_filter).grid(row=1,column=0,sticky=W)
-		Radiobutton(filter_frame, text="One Week", variable=self.filter_select, value=1,bg="white",command=self.change_filter).grid(row=1,column=1,sticky=W)
-		Radiobutton(filter_frame, text="One Month", variable=self.filter_select, value=2,bg="white",command=self.change_filter).grid(row=2,column=0,sticky=W)
-		Radiobutton(filter_frame, text="One Year", variable=self.filter_select, value=3,bg="white",command=self.change_filter).grid(row=2,column=1,sticky=W)
+		Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,bg="white",command=self.change_filter).grid(row=1,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,bg="white",command=self.change_filter).grid(row=1,column=1,sticky=W)
+		Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,bg="white",command=self.change_filter).grid(row=2,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,bg="white",command=self.change_filter).grid(row=2,column=1,sticky=W)
 		Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,bg="white",command=self.change_filter).grid(row=3,column=0,sticky=W)
 		Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,bg="white",command=self.change_filter).grid(row=3,column=1,sticky=W)
 		self.filter_select.set(0)
-		self.filter_start.set((date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
-		self.filter_end.set(date.today().strftime("%Y-%m-%d"))
+		self.filter_start.set((datetime.now()-timedelta(days=7)).strftime("%Y-%m-%d %H:%M"))
+		self.filter_end.set(datetime.now().strftime("%Y-%m-%d %H:%M"))
 		Label(filter_frame, text="Start",bg="white").grid(row=4,column=0)
 		Label(filter_frame, text="End",bg="white").grid(row=4,column=1)
 		start_entry=Entry(filter_frame, textvariable=self.filter_start,bg="white",state='disabled',justify='center')
@@ -856,39 +856,37 @@ class DataNumerical:
 		#check what filter is selected and calculate end date and duration to subtract in sql statement
 		filter=self.filter_select.get()
 		if filter==0:
-			enddate=date.today()
-			duration='-5 days'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=1)
 		elif filter==1:
-			enddate=date.today()
-			duration='-1 week'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=7)
 		elif filter==2:
-			enddate=date.today()
-			duration='-1 month'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=30)
 		elif filter==3:
-			enddate=date.today()
-			duration='-1 year'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=365)
 		elif filter==4:
-			enddate=date.today()
-			duration=None
+			enddate=datetime.now()
+			startdate=datetime.strptime("1970-01-01 00:00","%Y-%m-%d %H:%M")
 		elif filter==5:
 			try:
-				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")
+				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d %H:%M")
 			except ValueError:
-				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
 				return
 			try:
-				startdate=datetime.strptime(self.filter_start.get().strip(),"%Y-%m-%d")
+				startdate=datetime.strptime(self.filter_start.get().strip(),"%Y-%m-%d %H:%M")
 			except ValueError:
-				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
 				return
-			days=enddate-startdate
-			if days.days<1:
+			if enddate<=startdate:
 				tkMessageBox.showerror("Invalid Dates","End date must be after start date.", parent=self.an_win)
 				return
-			duration="-%s days"%days.days
 		
-		
-
+		#set starttime.seconds to zero just to avoid confusion
+		startdate=startdate.replace(second=0)
 		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
@@ -904,18 +902,7 @@ class DataNumerical:
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
 		
-		if not duration:
-			c.execute("""SELECT min(timestamp) from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=?""",(LocationID,SensorID,ReportTypeID))
-			results=c.fetchone()
-			if results[0]:
-				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
-				days=enddate-startdate
-				duration="-%s days"%(days.days+1)
-			else:
-				duration="-1 days"
-			 
-		
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
 		results=c.fetchall()
 		if not results:
 			self.data_tree.insert("",END,text="No data found")
@@ -935,7 +922,7 @@ class DataNumerical:
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,duration,enddate))
+		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,startdate,enddate))
 		for ReportID,timestamp in c.fetchall():
 			c1=self.db.cursor()
 			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))

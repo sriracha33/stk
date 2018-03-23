@@ -7,7 +7,7 @@ from datetime import datetime,date,timedelta
 import tkMessageBox
 import time
 import re
-import serial
+import serial #requires version 2.7
 import sqlite3
 import serial.tools.list_ports
 import os
@@ -235,13 +235,19 @@ class STK:
 	
 	#function to connect to a serial port and begin monitoring for reports
 	def serial_connect(self,port):
+		m=re.search(r"\ACOM(\d)\Z",port)
+		port_desc=port
+		if m:
+			portname=int(m.group(1))-1
+		else:
+			portname=port
 		try:
-			self.serial=serial.Serial(port, timeout=0)
+			self.serial=serial.Serial(portname, timeout=0)
 		except serial.SerialException:
 			tkMessageBox.showerror("Serial Error", "Error opening com port %s."%port)
 			self.log_error("Error opening com port %s."%port)
 			return
-		self.serial.reset_input_buffer()
+		self.serial.flushInput()
 		
 		self.log_process("Connected to %s" % (port,))
 		self.menubar.entryconfigure(2, state=DISABLED)

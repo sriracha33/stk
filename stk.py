@@ -497,6 +497,7 @@ class STK:
 					response=tkMessageBox.askyesno("Add Machine Name?","Machine name has not been set.\nWould you like to update name to:\n%s?"%self.report['machine'])
 					if response:
 						c.execute('''UPDATE config SET MachineName=? WHERE rowid = 1''',(self.report['machine'],))
+						self.db.commit()
 		
 		#check/add reportType exists
 		c.execute('''SELECT reportTypeID FROM reportTypes WHERE ReportTypeName = ?''',(self.report['name'],))
@@ -509,7 +510,6 @@ class STK:
 			self.log_process("New report type %s added to database"%self.report['name'])
 		elif not result:
 			self.log_error("Report Type Missing from Database: %s" % self.report['name'])
-			self.db.commit()
 			return
 		
 		#check/add location exists
@@ -523,7 +523,6 @@ class STK:
 			self.log_process("New location %s added to database"%self.report['location'])
 		else:
 			self.log_error("Location Missing from Database: %s" % self.report['location'])
-			self.db.commit()
 			return
 		
 		#check if grade exists.  This is always "learning", except when "learning"... (doesn't add grades when configuring)
@@ -539,7 +538,7 @@ class STK:
 				c.execute('''INSERT INTO grades (GradeID, GradeCode, GradeName) VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
 				GradeID=c.lastrowid
 				self.log_process("Added missing grade %s %s"%(self.report['gradecode'],self.report['gradename']))
-	
+			self.db.commit()
 		
 		#check/add sensor(s) and label(s) exists
 		for sensor in self.report['data']:
@@ -554,9 +553,8 @@ class STK:
 				SensorID=c.lastrowid
 				self.log_process("New sensor %s at location %s added to database"%(sensor['sensor'],self.report['location']))
 			else:
-				self.db.commit()
 				self.log_error("Sensor %s missing from Database at location %s" % (sensor['sensor'],self.report['location']))
-				return			
+				continue
 			
 			#check/add reportConfig exists
 			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
@@ -569,16 +567,15 @@ class STK:
 				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
 			elif not result:
 				self.log_error("Report %s %s %s missing from Database" % (sensor['sensor'],self.report['location'],self.report['name']))
-				self.db.commit()
-				return			
-			
+				continue	
 			
 			#insert report here.  Do not do if learning
 			if not self.learning:
 				c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
 				ReportID=c.lastrowid
-				self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
-			
+				self.db.commit()
+				
+			valid=True
 			for i,label in enumerate(sensor['labels']):
 				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(label,ReportConfigID))
 				result=c.fetchone()
@@ -589,14 +586,23 @@ class STK:
 					LabelID=c.lastrowid
 					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
 				else:
-					self.db.commit()
+					#self.db.commit()
 					self.log_error("Label %s missing from Database in location %s, sensor %s" % (label,self.report['location'],sensor['sensor']))
-					return
+					valid=False
+					continue
 				if not self.learning:
 					c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
-				
-		#commit and close every time. Most of the time we process multple reports at a time.
-		self.db.commit()
+			if valid:
+				self.db.commit()
+				self.log_process("%s: %s, %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],sensor['sensor'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
+			else:
+				self.db.rollback()
+				c.execute("""DELETE FROM reports WHERE ReportID = ?""",(ReportID,))
+				c.execute("""UPDATE SQLITE_SEQUENCE SET seq = ? WHERE name = 'reports'""",(ReportID-1,))
+				self.db.commit()
+				continue
+		#close every time. Most of the time we process multple reports at a time.
+			
 		self.db.close()
 		
 	def create_database(self):

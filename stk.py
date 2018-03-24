@@ -236,18 +236,29 @@ class STK:
 	#function to connect to a serial port and begin monitoring for reports
 	def serial_connect(self,port):
 		m=re.search(r"\ACOM(\d)\Z",port)
-		port_desc=port
+
+		#needed for pyserial 2.7
 		if m:
 			portname=int(m.group(1))-1
 		else:
 			portname=port
+		
 		try:
-			self.serial=serial.Serial(portname, timeout=0)
+			#serial 2.7/3.4 support
+			try:
+				self.serial=serial.Serial(portname, timeout=0)
+			except:
+				self.serial=serial.Serial(port, timeout=0)			
 		except serial.SerialException:
 			tkMessageBox.showerror("Serial Error", "Error opening com port %s."%port)
 			self.log_error("Error opening com port %s."%port)
 			return
-		self.serial.flushInput()
+		
+		#serial 2.7/3.4 support
+		try:
+			self.serial.flushInput()
+		except:
+			self.serial.reset_input_buffer()
 		
 		self.log_process("Connected to %s" % (port,))
 		self.menubar.entryconfigure(2, state=DISABLED)

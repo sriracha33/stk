@@ -1,13 +1,16 @@
 #!/usr/bin/python
-from Tkinter import *
+#from Tkinter import *
+import Tkinter
 from ttk import Treeview
 import tkFont
 from tkFileDialog import *
 from datetime import datetime,date,timedelta
+import xml.etree.ElementTree as etree
+from xml.dom import minidom
 import tkMessageBox
 import time
 import re
-import serial #requires version 2.7
+import serial #requires version 2.7/3.4
 import sqlite3
 import serial.tools.list_ports
 import os
@@ -20,11 +23,11 @@ def main():
 		stk.t.focus_force()
 	except:
 		return
-	mainloop()
+	Tkinter.mainloop()
 	
 class STK:
 	def __init__(self):
-		root = Tk()
+		root = Tkinter.Tk()
 		root.title("STK")
 		root.protocol("WM_DELETE_WINDOW", self.on_closing)
 		root.geometry("+100+100")
@@ -58,36 +61,36 @@ class STK:
 				BFcgm1iB734hbBb0hne9jwGAham73QxPV0SyyTBBstthEROEwJ3Fr4kJImHvlHjFCGlwdPoLY6X+xrQ1jghPVTPeHE9EAcL0TAB67GOLPKDFhDlAiIvcEQWgOCkFEA
 				CTUWIACCDgwzGhAAIasOQpe/nLYA6zmMdM5jKb+cwmCQgAOw=="""
 		
-		self.icon= PhotoImage(data=img)
+		self.icon=Tkinter.PhotoImage(data=img)
 		root.call('wm', 'iconphoto', root._w, self.icon)
 		
 		#create status bar at the bottom of the window
-		statusbar=Frame(root,borderwidth=1, relief=SUNKEN)
-		statusbar.pack(side=BOTTOM, fill=X)
-		statusicon = Canvas(statusbar,height=20, width=20)
+		statusbar=Tkinter.Frame(root,borderwidth=1, relief='sunken')
+		statusbar.pack(side='bottom', fill='x')
+		statusicon=Tkinter.Canvas(statusbar,height=20, width=20)
 		statusicon.create_oval(3, 3, 17, 17, outline="black", fill="red")
-		statusicon.pack(side=LEFT)
-		statustext = Label(statusbar, text="Not Connected", anchor=W)
-		statustext.pack(side=LEFT)
-		timetext=Label(statusbar, anchor=E)
-		timetext.pack(side=RIGHT)
+		statusicon.pack(side='left')
+		statustext=Tkinter.Label(statusbar, text="Not Connected", anchor='w')
+		statustext.pack(side='left')
+		timetext=Tkinter.Label(statusbar, anchor='e')
+		timetext.pack(side='right')
 		
 		#main text box w/ scrollbar
-		t = Text(root, height=40, width=80)
+		t=Tkinter.Text(root, height=40, width=80)
 		t.pack()
-		scroll = Scrollbar(root)
-		scroll.pack(side=RIGHT, fill=Y)
-		t.pack(side=LEFT, fill=BOTH, expand=True)
+		scroll = Tkinter.Scrollbar(root)
+		scroll.pack(side='right', fill='y')
+		t.pack(side='left', fill='both', expand=True)
 		scroll.config(command=t.yview)
 		t.configure(yscrollcommand=scroll.set)
-		t.config(state=DISABLED)
+		t.config(state='disabled')
 		
 		###Set up Menus###
-		menubar = Menu(root)
+		menubar = Tkinter.Menu(root)
 		root.config(menu=menubar)
 		
 		#file menu
-		filemenu = Menu(menubar, tearoff=0)
+		filemenu = Tkinter.Menu(menubar, tearoff=0)
 		filemenu.add_command(label="Open Log File", command=self.open_logfile)
 		filemenu.add_command(label="Collect Reports from Log File", command=self.process_logfile)
 		filemenu.add_separator()
@@ -97,19 +100,20 @@ class STK:
 		menubar.add_cascade(label="File", menu=filemenu)
 		
 		#Connect menu.  Filled in from update_ports
-		connectmenu = Menu(menubar, tearoff=0)
-		menubar.add_cascade(label="Connect", menu=connectmenu)
+		serialmenu = Tkinter.Menu(menubar, tearoff=0)
+		menubar.add_cascade(label="Serial", menu=serialmenu)
 		
 		#Analyze menu
-		analyzemenu = Menu(menubar, tearoff=0)
+		analyzemenu = Tkinter.Menu(menubar, tearoff=0)
 		menubar.add_cascade(label="Analyze", menu=analyzemenu)
 		analyzemenu.add_command(label="Data Numerical", command=self.analyze_numerical)
 		
 		#Setup menu
-		setupmenu = Menu(menubar, tearoff=0)
+		setupmenu = Tkinter.Menu(menubar, tearoff=0)
 		menubar.add_cascade(label="Setup", menu=setupmenu)
-		setupmenu.add_command(label="Auto Report Config", command=self.report_config_auto)
+		setupmenu.add_command(label="Auto Serial Report Config", command=self.report_config_auto)
 		setupmenu.add_command(label="Manual Report Config", command=self.report_config_manual)
+		setupmenu.add_command(label='Options', command=self.update_ports)
 		
 		#update window after all setup and complete and make that the minimum size
 		root.update_idletasks()
@@ -125,14 +129,17 @@ class STK:
 		self.menubar=menubar
 		self.statustext=statustext
 		self.statusicon=statusicon
-		self.connectmenu=connectmenu
+		self.serialmenu=serialmenu
 		self.timetext=timetext
+		
+		#initialize configuration.
+		self.options=Options()			
 		
 		#initialize filenames
 		self.path=os.path.dirname(os.path.realpath(__file__))
+		self.path = '/'.join(self.path.split('\\'))
 		self.processfile=self.path+"/"+"process.log"
 		self.errorfile=self.path+"/"+"error.log"
-		self.dbfile=self.path+"/"+"stk.db"
 		
 		crashfile=self.path+"/"+"crash.log"
 		#sys.stderr = open(crashfile, 'a')
@@ -148,18 +155,17 @@ class STK:
 		self.learning=False
 		
 		#config
-		self.maxrows=500
+		#self.maxrows=self.options.maxlines
 		self.dbversion="1.0"
 		#add serial parameters here
 		
-		if not os.path.isfile(self.dbfile):
+		if not os.path.isfile(self.options.dbfile):
 			self.create_database()		
 		
-		#initialize configuration.  Later this will probably come from config file
-		self.config=Config(self.icon,self.dbfile)		
+	
 		
 		#check if db version matches STK version
-		db=sqlite3.connect(self.dbfile)
+		db=sqlite3.connect(self.options.dbfile)
 		c=db.cursor()
 		
 		c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
@@ -174,8 +180,17 @@ class STK:
 			return
 		
 		###Startup Functions###
-		self.update_ports()
+		
+		#initialize serial
+		if self.options.serial_autoconnect and self.options.serial_port:
+			self.serial_connect()
+		else:
+			if not self.options.serial_port:
+				tkMessageBox.showinfo("Serial Autoconnect Failed","Serial Autoconnect Failed.\nAutoconnect is enabled but no port was specified")
+			self.update_ports()
+		
 		self.update_time()
+		
 	
 	#function run when window closed from any way except File->Exit
 	
@@ -213,18 +228,18 @@ class STK:
 	#function to clear out the text display widget.
 	def clear_window(self):
 		self.t.configure(state=NORMAL)
-		self.t.delete('1.0',END)
+		self.t.delete('1.0','end')
 		self.t.configure(state=DISABLED	)
 	
 	#function which gets current list of serial ports and makes connect menu show them
 	def update_ports(self):
-		while self.connectmenu.index("end") is not None:
-			self.connectmenu.delete(0)
+		while self.serialmenu.index("end") is not None:
+			self.serialmenu.delete(0)
 		comports = sorted(serial.tools.list_ports.comports(), key=lambda x: x[0])
 		for port,description,address in comports:
-			self.connectmenu.add_command(label=port + " - " + description, command=lambda p=port: self.serial_connect(p))
-		self.connectmenu.add_separator()
-		self.connectmenu.add_command(label='Refresh Ports', command=self.update_ports)
+			self.serialmenu.add_command(label=port + " - " + description, command=lambda p=port: self.serial_connect(p))
+		self.serialmenu.add_separator()
+		self.serialmenu.add_command(label='Refresh Ports', command=self.update_ports)
 	
 	def update_time(self):
 		"""Periodically called function run to update time in GUI"""
@@ -234,22 +249,33 @@ class STK:
 		self.timetext.after(20,self.update_time)
 	
 	#function to connect to a serial port and begin monitoring for reports
-	def serial_connect(self,port):
-		m=re.search(r"\ACOM(\d)\Z",port)
-
-		#needed for pyserial 2.7
+	def serial_connect(self,port=None):
+		if port is not None:
+			self.options.serial_port=port
+		port=self.options.serial_port
+		baudrate=self.options.serial_baudrate
+		bytesize=self.options.serial_bytesize
+		parity=self.options.serial_parity
+		stopbits=self.options.serial_stopbits
+		
+		#needed for pyserial 2.7. If is for Windows, else is for Linux
+		m=re.search(r"\ACOM(\d+)\Z",port)
 		if m:
-			portname=int(m.group(1))-1
+			portno=int(m.group(1))-1
 		else:
-			portname=port
+			portno=port
 		
 		try:
-			#serial 2.7/3.4 support
+			#serial 3.4/2.7 support respectively
 			try:
-				self.serial=serial.Serial(portname, timeout=0)
+				self.serial=serial.Serial(port,baudrate=baudrate, bytesize=bytesize,parity=parity, stopbits=stopbits, timeout=0)
 			except:
-				self.serial=serial.Serial(port, timeout=0)			
+				self.serial=serial.Serial(portno,baudrate=baudrate, bytesize=bytesize,parity=parity, stopbits=stopbits, timeout=0)
 		except serial.SerialException:
+			tkMessageBox.showerror("Serial Error", "Error opening com port %s."%port)
+			self.log_error("Error opening com port %s."%port)
+			return
+		except ValueError:
 			tkMessageBox.showerror("Serial Error", "Error opening com port %s."%port)
 			self.log_error("Error opening com port %s."%port)
 			return
@@ -260,9 +286,13 @@ class STK:
 		except:
 			self.serial.reset_input_buffer()
 		
+		while self.serialmenu.index("end") is not None:
+			self.serialmenu.delete(0)
+		self.serialmenu.add_command(label='Disconnect', command=self.serial_disconnect)	
+		
 		self.log_process("Connected to %s" % (port,))
-		self.menubar.entryconfigure(2, state=DISABLED)
-		self.statusicon.itemconfigure(ALL, fill="green")
+		#self.menubar.entryconfigure(2, state=DISABLED)
+		self.statusicon.itemconfigure('all', fill="green")
 		self.statustext.config(text="Connected to port: %s at %s,%s,%s,%s"%(port,self.serial.baudrate,self.serial.bytesize,self.serial.parity,self.serial.stopbits))
 		self.process_serial()
 	
@@ -272,7 +302,7 @@ class STK:
 		self.t.after_cancel(self.serialalarm)
 		self.update_ports()
 		self.menubar.entryconfigure(2, state=NORMAL)
-		self.statusicon.itemconfigure(ALL, fill="red")
+		self.statusicon.itemconfigure('all', fill="red")
 		self.statustext.config(text="Disconnected")
 		
 	#function to log timestamp and process string to process log file
@@ -299,8 +329,9 @@ class STK:
 			self.an_win.focus_force()
 			self.an_win.lift()
 			return
-		self.an_win = Toplevel()
-		DataNumerical(self.an_win,self.config)
+		self.an_win = Tkinter.Toplevel()
+		self.an_win.tk.call('wm', 'iconphoto', self.an_win._w, self.icon)
+		DataNumerical(self.an_win,self.options)
 		
 	#function to open/close log file. One function to make tk binding easier
 	def open_logfile(self):
@@ -332,8 +363,9 @@ class STK:
 			self.rc_win.focus_force()
 			self.rc_win.lift()
 			return
-		self.rc_win = Toplevel()
-		ReportConfig(self.rc_win,self.config)
+		self.rc_win = Tkinter.Toplevel()
+		self.rc_win.tk.call('wm', 'iconphoto', self.rc_win._w, self.icon)
+		ReportConfig(self.rc_win,self.options)
 	
 	#function to process log file.  Can process multiple at the same time.  Used for both configuration and importing of reports
 	def process_logfile(self):
@@ -341,8 +373,8 @@ class STK:
 		if not logfilenames:
 			return
 		oldstatus=self.statustext['text']
-		oldcolor=self.statusicon.itemcget(ALL,"fill")
-		self.statusicon.itemconfigure(ALL, fill="yellow")
+		oldcolor=self.statusicon.itemcget('all',"fill")
+		self.statusicon.itemconfigure('all', fill="yellow")
 		if self.serialalarm:
 			self.t.after_cancel(self.serialalarm)
 		temp_report=self.report.copy()
@@ -359,7 +391,7 @@ class STK:
 		if self.serialalarm:
 			self.serialalarm = self.t.after(10,self.process_serial)
 		self.statustext['text']=oldstatus
-		self.statusicon.itemconfigure(ALL, fill=oldcolor)
+		self.statusicon.itemconfigure('all', fill=oldcolor)
 		tkMessageBox.showinfo("Complete","Log File Import Complete")
 		
 	#function to process serial port.  Reads and combines bytes into lines for processing/
@@ -385,13 +417,13 @@ class STK:
 	#functions to display a line of text at the bottom of the text window and manage max size
 	def display_line(self,line):
 		line=re.sub(r'(\r|\f)',r'',line) #remove \r and \f for displaying (linux)
-		self.t.config(state=NORMAL)
-		self.t.insert(END,line)
-		self.t.see(END)
+		self.t.config(state='normal')
+		self.t.insert('end',line)
+		self.t.see('end')
 		#remove extra rows so we are within the max.
-		while int(eval(self.t.index('end-1c')))>self.maxrows:
+		while int(eval(self.t.index('end-1c')))>self.options.maxlines:
 			self.t.delete('1.0','2.0')
-		self.t.config(state=DISABLED)
+		self.t.config(state='disabled')
 	
 	#function to process a line of text from process_serial or process_logfile
 	#creates and manages reports (self.report) and when a report is complete runs process_report
@@ -501,7 +533,7 @@ class STK:
 	#can function in learning==True which will update Report Type, Locations, Sensors and Labels but not reports, report data and grade.
 	#or can function in learning==False where is logs reports, report data and grades if configuration exists.  This should help catch malformed reports.
 	def process_report(self):
-		self.db = sqlite3.connect(self.dbfile)
+		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		
 		#check if machinename is set. Offer to set it if not. Only for learning.
@@ -627,11 +659,11 @@ class STK:
 		answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for the correct database?")
 		if answer:
 			dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
-			self.dbfile=dbfile
+			self.options.dbfile=dbfile
 			return		
 		
-		tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.dbfile)
-		self.db = sqlite3.connect(self.dbfile)
+		tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.options.dbfile)
+		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()		
 		c.execute("""CREATE TABLE "config" ( `DatabaseVersion` TEXT NOT NULL, `MachineName` TEXT DEFAULT NULL, `CustomerName` TEXT DEFAULT NULL, `CustomerLocation` TEXT DEFAULT NULL )""")
 		c.execute("""CREATE TABLE "grades" ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
@@ -651,21 +683,20 @@ class STK:
 		
 
 class ReportConfig:
-	def __init__(self,parent,config):
-		self.dbfile=config.dbfile
-		self.icon=config.icon
+	def __init__(self,parent,options):
+		self.options=options
+		#self.icon=config.icon
 		self.win=parent
-		
-		self.win.tk.call('wm', 'iconphoto', self.win._w, self.icon)
+	
 		self.win.geometry("+100+100")
 		self.win.geometry("800x600")
 		self.win.minsize(800,600)
 		
 		#split window into two panes
-		paned=PanedWindow(self.win,orient=HORIZONTAL)
-		paned.pack(fill=BOTH,expand=1)
+		paned=Tkinter.PanedWindow(self.win,orient='horizontal')
+		paned.pack(fill='both',expand=1)
 		
-		report_frame=Frame(paned, width=270)
+		report_frame=Tkinter.Frame(paned, width=270)
 		paned.add(report_frame, minsize=270)
 		report_frame.grid_propagate(0)
 		report_frame.columnconfigure(0, weight = 1)
@@ -674,46 +705,46 @@ class ReportConfig:
 		report_frame.rowconfigure(1, weight = 0)
 		report_frame.rowconfigure(2, weight = 0)
 		
-		data_frame=LabelFrame(paned,text="Report Configuration")
+		data_frame=Tkinter.LabelFrame(paned,text="Report Configuration")
 		paned.add(data_frame)
 		
-		rt_lframe=LabelFrame(report_frame,text="Machine Structure")
-		rt_lframe.grid(column=0,row=0,sticky=W+E+N+S,padx=2)
+		rt_lframe=Tkinter.LabelFrame(report_frame,text="Machine Structure")
+		rt_lframe.grid(column=0,row=0,sticky='wens',padx=2)
 		rt_lframe.columnconfigure(0, weight = 1)
 		rt_lframe.columnconfigure(1, weight = 1)
 		rt_lframe.rowconfigure(0, weight = 1)
 		rt_lframe.rowconfigure(1, weight = 0)
-		structure_add_button=Button(rt_lframe,text="Add Item",width=1,state=DISABLED)
-		structure_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		structure_remove_button=Button(rt_lframe,text="Remove Item",width=1,state=DISABLED)
-		structure_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		rt_sframe=Frame(rt_lframe)
-		rt_sframe.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
-		rt_vscroll = Scrollbar(rt_sframe)
-		rt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)			
-		report_tree=StructureTree(rt_sframe,config.dbfile)
-		report_tree.pack(side=BOTTOM, fill=BOTH, expand=True)
+		structure_add_button=Tkinter.Button(rt_lframe,text="Add Item",width=1,state='disabled')
+		structure_add_button.grid(column=0,row=1,sticky='wens',padx=2,pady=2)
+		structure_remove_button=Tkinter.Button(rt_lframe,text="Remove Item",width=1,state='disabled')
+		structure_remove_button.grid(column=1,row=1,sticky='wens',padx=2,pady=2)
+		rt_sframe=Tkinter.Frame(rt_lframe)
+		rt_sframe.grid(column=0,row=0,columnspan=2,sticky='wens',padx=2,pady=2)
+		rt_vscroll = Tkinter.Scrollbar(rt_sframe)
+		rt_vscroll.pack(side='right', fill='y', padx=2, pady=2)			
+		report_tree=StructureTree(rt_sframe,options)
+		report_tree.pack(side='bottom', fill='both', expand=True)
 		report_tree['show']='tree'
 		rt_vscroll.config(command=report_tree.yview)
 		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
-		tt_lframe=LabelFrame(report_frame,text="Report Types")
-		tt_lframe.grid(column=0,row=1,sticky=W+E+N+S,padx=2)
+		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
+		tt_lframe.grid(column=0,row=1,sticky='wens',padx=2)
 		tt_lframe.columnconfigure(0, weight = 1)
 		tt_lframe.columnconfigure(1, weight = 1)
 		tt_lframe.rowconfigure(0, weight = 1)
 		tt_lframe.rowconfigure(1, weight = 0)
-		type_add_button=Button(tt_lframe,text="Add Item",width=1,state=DISABLED)
-		type_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		type_remove_button=Button(tt_lframe,text="Remove Item",width=1,state=DISABLED)
-		type_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		tt_sframe=Frame(tt_lframe)
-		tt_sframe.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
-		tt_vscroll = Scrollbar(tt_sframe)
-		tt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)							
-		type_tree=ReportTypeTree(tt_sframe,self.dbfile)
+		type_add_button=Tkinter.Button(tt_lframe,text="Add Item",width=1,state='disabled')
+		type_add_button.grid(column=0,row=1,sticky='wens',padx=2,pady=2)
+		type_remove_button=Tkinter.Button(tt_lframe,text="Remove Item",width=1,state='disabled')
+		type_remove_button.grid(column=1,row=1,sticky='wens',padx=2,pady=2)
+		tt_sframe=Tkinter.Frame(tt_lframe)
+		tt_sframe.grid(column=0,row=0,columnspan=2,sticky='wens',padx=2,pady=2)
+		tt_vscroll = Tkinter.Scrollbar(tt_sframe)
+		tt_vscroll.pack(side='right', fill='y', padx=2, pady=2)							
+		type_tree=ReportTypeTree(tt_sframe,self.options)
 		type_tree['height']=5
-		type_tree.pack(side=BOTTOM, fill=BOTH, expand=True)
+		type_tree.pack(side='bottom', fill='both', expand=True)
 		type_tree['show']='tree'
 		tt_vscroll.config(command=type_tree.yview)
 		type_tree.configure(yscrollcommand=tt_vscroll.set)		
@@ -723,17 +754,17 @@ class ReportConfig:
 		report_tree.bind("<<TreeviewSelect>>",self.button_states,add="+")
 		
 		
-		self.source = IntVar(value=0)
-		rs_lframe=LabelFrame(report_frame,text="Report Source Type")
-		rs_lframe.grid(column=0,row=2,sticky=W+E+N+S,padx=2)
+		self.source = Tkinter.IntVar(value=0)
+		rs_lframe=Tkinter.LabelFrame(report_frame,text="Report Source Type")
+		rs_lframe.grid(column=0,row=2,sticky='wens',padx=2)
 		rs_lframe.columnconfigure(0, weight = 1)
 		rs_lframe.columnconfigure(1, weight = 1)
 		rs_lframe.rowconfigure(0, weight = 1)
 		rs_lframe.rowconfigure(1, weight = 0)
 		rs_lframe.rowconfigure(2, weight = 0)
-		Radiobutton(rs_lframe, text="Serial Datalogger", variable=self.source, value=0,anchor=W).grid(row=0,column=0,columnspan=2,sticky=W+E+N+S)
-		Radiobutton(rs_lframe, text="OPC Datalogger", variable=self.source, value=1,anchor=W).grid(row=1,column=0,columnspan=2,sticky=W+E+N+S)
-		Button(rs_lframe,text="Create New Report",command=self.create_report).grid(column=0,row=2,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		Tkinter.Radiobutton(rs_lframe, text="Serial Datalogger", variable=self.source, value=0,anchor='w').grid(row=0,column=0,columnspan=2,sticky='wens')
+		Tkinter.Radiobutton(rs_lframe, text="OPC Datalogger", variable=self.source, value=1,anchor='w').grid(row=1,column=0,columnspan=2,sticky='wens')
+		Tkinter.Button(rs_lframe,text="Create New Report",command=self.create_report).grid(column=0,row=2,columnspan=2,sticky='wens',padx=2,pady=2)
 		
 		
 		##Self Declarations##
@@ -757,119 +788,113 @@ class ReportConfig:
 		call_widget=event.widget
 		item=call_widget.selection()[0]
 		if call_widget.tag_has("Sensor",item):
-			self.structure_add_button['state']=DISABLED
-			self.structure_remove_button['state']=ACTIVE
+			self.structure_add_button['state']='disabled'
+			self.structure_remove_button['state']='active'
 		elif call_widget.tag_has("Machine",item): #doesn't exists yet
-			self.structure_add_button['state']=ACTIVE
-			self.structure_remove_button['state']=DISABLED		
+			self.structure_add_button['state']='active'
+			self.structure_remove_button['state']='disabled'		
 		elif call_widget.tag_has("Location",item):
 			if call_widget.get_children(item):
-				self.structure_add_button['state']=ACTIVE
-				self.structure_remove_button['state']=DISABLED
+				self.structure_add_button['state']='active'
+				self.structure_remove_button['state']='disabled'
 			else:
-				self.structure_add_button['state']=ACTIVE
-				self.structure_remove_button['state']=ACTIVE				
+				self.structure_add_button['state']='active'
+				self.structure_remove_button['state']='active'				
 		else:	#no selection.  should never happen
-			self.structure_add_button['state']=DISABLED
-			self.structure_remove_button['state']=DISABLE
+			self.structure_add_button['state']='disabled'
+			self.structure_remove_button['state']='disabled'
 	
 	def create_report(self):
 		"""Placeholder for funtion which will generate the GUI for creating a new """
 		print self.source.get()
 		
 class DataNumerical:
-	def __init__(self,parent,config):
-		self.dbfile=config.dbfile
-		self.icon=config.icon
+	def __init__(self,parent,options):
+		self.options=options
 		self.an_win=parent
 		
-		self.an_win.tk.call('wm', 'iconphoto', self.an_win._w, self.icon)
 		self.an_win.geometry("+100+100")
 		self.an_win.geometry("800x600")
 		self.an_win.minsize(800,600)
 		
 		#split window into two panes
-		paned=PanedWindow(self.an_win,orient=HORIZONTAL)
-		paned.pack(fill=BOTH,expand=1)		
+		paned=Tkinter.PanedWindow(self.an_win,orient='horizontal')
+		paned.pack(fill='both',expand=1)		
 		
-		report_frame=Frame(paned)
+		report_frame=Tkinter.Frame(paned)
 		paned.add(report_frame, minsize=250, padx=2)
-		#report_frame.pack(fill=Y, side=LEFT)
 		report_frame.pack_propagate(0)
-		data_frame=Frame(paned)
+		data_frame=Tkinter.Frame(paned)
 		paned.add(data_frame, padx=2)
-		#data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
 		
 		#data frame
 		data_tree=Treeview(data_frame,selectmode="browse", show="tree")
-		hscroll = Scrollbar(data_frame,orient=HORIZONTAL)
-		hscroll.pack(side=BOTTOM, fill=X)
-		vscroll = Scrollbar(data_frame)
-		vscroll.pack(side=RIGHT, fill=Y)
-		data_tree.pack(side=LEFT,fill=BOTH,anchor=N,expand=True)
+		hscroll = Tkinter.Scrollbar(data_frame,orient="horizontal")
+		hscroll.pack(side="bottom", fill="x")
+		vscroll = Tkinter.Scrollbar(data_frame)
+		vscroll.pack(side="right", fill="y")
+		data_tree.pack(side="left",fill="both",anchor="n",expand=True)
 		vscroll.config(command=data_tree.yview)
 		data_tree.configure(yscrollcommand=vscroll.set)
 		hscroll.config(command=data_tree.xview)
 		data_tree.configure(xscrollcommand=hscroll.set)
 		
-		
-		
 		#report frame
-		csv_button=Button(report_frame, text="Save as CSV", command=self.save_csv,state='disabled')#, relief="ridge"
-		csv_button.pack(side=BOTTOM, fill=X)
-		generate_button=Button(report_frame, text="Generate Report", command=self.generate_report,state='disabled')#, relief="ridge"
-		generate_button.pack(side=BOTTOM, fill=X)
+		csv_button=Tkinter.Button(report_frame, text="Save as CSV", command=self.save_csv,state='disabled')#, relief="ridge"
+		csv_button.pack(side="bottom", fill="x")
+		generate_button=Tkinter.Button(report_frame, text="Generate Report", command=self.generate_report,state='disabled')#, relief="ridge"
+		generate_button.pack(side="bottom", fill="x")
 		
 		##variable##
-		self.filter_select = IntVar()
-		self.filter_start = StringVar()
-		self.filter_end = StringVar()
+		self.filter_select = Tkinter.IntVar()
+		self.filter_start = Tkinter.StringVar()
+		self.filter_end = Tkinter.StringVar()
 		
 		#filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
-		ff_lframe=LabelFrame(report_frame,text="Time Filter")
-		ff_lframe.pack(side=BOTTOM, fill=X)
-		filter_frame=Frame(ff_lframe,width=225,height=200)
-		filter_frame.pack(side=BOTTOM, fill=BOTH, padx=2, pady=2)
+		ff_lframe=Tkinter.LabelFrame(report_frame,text="Time Filter")
+		ff_lframe.pack(side='bottom', fill='x')
+		filter_frame=Tkinter.Frame(ff_lframe,width=225,height=200)
+		filter_frame.pack(side='bottom', fill='both', padx=2, pady=2)
 		filter_frame.pack_propagate(0)
 		#move code starting here to new class
 		filter_frame.columnconfigure(0, weight = 1)
 		filter_frame.columnconfigure(1, weight = 1)
-		Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,command=self.change_filter).grid(row=1,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,command=self.change_filter).grid(row=1,column=1,sticky=W)
-		Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,command=self.change_filter).grid(row=2,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,command=self.change_filter).grid(row=2,column=1,sticky=W)
-		Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,command=self.change_filter).grid(row=3,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,command=self.change_filter).grid(row=3,column=1,sticky=W)
+		Tkinter.Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,command=self.change_filter).grid(row=1,column=0,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,command=self.change_filter).grid(row=1,column=1,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,command=self.change_filter).grid(row=2,column=0,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,command=self.change_filter).grid(row=2,column=1,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,command=self.change_filter).grid(row=3,column=0,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,command=self.change_filter).grid(row=3,column=1,sticky='w')
 		self.filter_select.set(0)
 		self.filter_start.set((datetime.now()-timedelta(days=7)).strftime("%Y-%m-%d %H:%M"))
 		self.filter_end.set(datetime.now().strftime("%Y-%m-%d %H:%M"))
-		Label(filter_frame, text="Start").grid(row=4,column=0)
-		Label(filter_frame, text="End").grid(row=4,column=1)
-		start_entry=Entry(filter_frame, textvariable=self.filter_start,bg="white",state='disabled',justify='center')
+		Tkinter.Label(filter_frame, text="Start").grid(row=4,column=0)
+		Tkinter.Label(filter_frame, text="End").grid(row=4,column=1)
+		start_entry=Tkinter.Entry(filter_frame, textvariable=self.filter_start,bg="white",state='disabled',justify='center')
 		start_entry.grid(row=5,column=0)
-		end_entry=Entry(filter_frame, textvariable=self.filter_end,bg="white",state='disabled',justify='center')
+		end_entry=Tkinter.Entry(filter_frame, textvariable=self.filter_end,bg="white",state='disabled',justify='center')
 		end_entry.grid(row=5,column=1)
 		#move code ending here to new class
 		
-		tt_lframe=LabelFrame(report_frame,text="Report Types")
-		tt_lframe.pack(side=BOTTOM, fill=X)		
-		tt_vscroll = Scrollbar(tt_lframe)
-		tt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)			
-		type_tree=ReportTypeTree(tt_lframe,self.dbfile)
-		tt_lframe.pack(side=BOTTOM, fill=BOTH)		
+		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
+		tt_lframe.pack(side='bottom', fill='x')		
+		tt_vscroll = Tkinter.Scrollbar(tt_lframe)
+		tt_vscroll.pack(side='right', fill='y', padx=2, pady=2)			
+		type_tree=ReportTypeTree(tt_lframe,self.options)
+		tt_lframe.pack(side='bottom', fill='both')		
 		type_tree.config(height=5)
 		type_tree.column("#0",stretch=True)
-		type_tree.pack(side=BOTTOM,fill=X,anchor=S, padx=2, pady=2)
+		type_tree.pack(side='bottom',fill='x',anchor='s', padx=2, pady=2)
 		tt_vscroll.config(command=type_tree.yview)
 		type_tree.configure(yscrollcommand=tt_vscroll.set)		
 		
-		rt_lframe=LabelFrame(report_frame,text="Machine Structure")
-		rt_lframe.pack(side=BOTTOM, fill=BOTH, expand=True)	
-		rt_vscroll = Scrollbar(rt_lframe)
-		rt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)				
-		report_tree=StructureTree(rt_lframe,self.dbfile)
+		rt_lframe=Tkinter.LabelFrame(report_frame,text="Machine Structure")
+		rt_lframe.pack(side='bottom', fill='both', expand=True)	
+		rt_vscroll = Tkinter.Scrollbar(rt_lframe)
+		rt_vscroll.pack(side='right', fill='y', padx=2, pady=2)				
+		report_tree=StructureTree(rt_lframe,self.options)
 		report_tree.column("#0",stretch=True)
-		report_tree.pack(side=LEFT,fill=BOTH,expand=True, anchor=S, padx=2, pady=2)
+		report_tree.pack(side='left',fill='both',expand=True, anchor='s', padx=2, pady=2)
 		rt_vscroll.config(command=report_tree.yview)
 		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
@@ -956,13 +981,13 @@ class DataNumerical:
 		rtype=self.type_tree.selection()[0]
 		ReportTypeID=rtype.split("_")[1]
 		
-		self.db = sqlite3.connect(self.dbfile)
+		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
 		results=c.fetchall()
 		if not results:
-			self.data_tree.insert("",END,text="No data found")
+			self.data_tree.insert("",'end',text="No data found")
 			self.data_tree['show']='tree'
 			self.csv_button.config(state='disabled')
 			return
@@ -988,7 +1013,7 @@ class DataNumerical:
 				i=LabelIDs.index(result[2])
 				values[i]=result[1]
 			c1.close()
-			self.data_tree.insert("",END,text=timestamp,values=values)
+			self.data_tree.insert("",'end',text=timestamp,values=values)
 		c.close()
 		self.db.close()
 		
@@ -1009,19 +1034,28 @@ class DataNumerical:
 				row=list(str(x) for x in self.data_tree.item(report)['values'])
 				line=','.join(timestamp+row)
 				writer.writerow(timestamp+row)
+
+class Options:
+	"""Class to make an options window and save/load options"""
+	
+	def __init__(self,parent):
+		self.win=parent
+		
+
+###Widget Classes###
 	
 class StructureTree(Treeview):
 	
-	def __init__(self,parent,dbfile):
+	def __init__(self,parent,options):
 		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.column("#0",stretch=True)
-		self.dbfile=dbfile
+		self.options=options
 		self.update_structure()
 		
 		
 	def update_structure(self):
 		self.delete(*self.get_children())
-		self.db = sqlite3.connect(self.dbfile)
+		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		c.execute("""SELECT MachineName FROM config WHERE rowid=1""")
 		result=c.fetchone()
@@ -1032,7 +1066,7 @@ class StructureTree(Treeview):
 		else:
 			MachineName="MACHINE"
 		
-		self.insert("", END, MachineName, text=MachineName, tags="Machine",open=True)
+		self.insert("", 'end', MachineName, text=MachineName, tags="Machine",open=True)
 		
 		c.execute("""SELECT DISTINCT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName,SensorID""")
 		for LocationID,LocationName,SensorID,SensorName in c.fetchall():
@@ -1040,24 +1074,23 @@ class StructureTree(Treeview):
 			ReportTypeLabel="Location_%d"%LocationID
 			LocationLabel="Location_%d"%LocationID
 			if not self.exists("Location_%d"%LocationID):
-				#self.insert("", END, "Location_%d"%LocationID, text=LocationName, tags="Location")
-				self.insert(MachineName, END, "Location_%d"%LocationID, text=LocationName, tags="Location")
+				self.insert(MachineName, 'end', "Location_%d"%LocationID, text=LocationName, tags="Location")
 			if not self.exists("Sensor_%d"%SensorID):
-				self.insert("Location_%d"%LocationID, END, "Sensor_%d"%SensorID, text=SensorName,tags="Sensor")		
+				self.insert("Location_%d"%LocationID, 'end', "Sensor_%d"%SensorID, text=SensorName,tags="Sensor")		
 		c.close()
 		self.db.close()
 		
 class ReportTypeTree(Treeview):
 	
-	def __init__(self,parent,dbfile):
+	def __init__(self,parent,options):
 		Treeview.__init__(self,parent,selectmode="browse", show='tree')
-		self.dbfile=dbfile
+		self.options=options
 		self.column("#0",stretch=True)
 		
 	def update_reports(self,event):
 		"""Method to be bound to by StructureTree <<Selection>> event.  Populates the ReportTypeTree with available report types."""
 		self.delete(*self.get_children())
-		self.db = sqlite3.connect(self.dbfile)
+		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		call_widget=event.widget
 		item=call_widget.selection()[0]
@@ -1074,7 +1107,7 @@ class ReportTypeTree(Treeview):
 				self.db.close()
 				return
 			for ReportTypeID,ReportTypeName in results:
-				self.insert("", END, "ReportType_%d"%ReportTypeID, text=ReportTypeName)
+				self.insert("", 'end', "ReportType_%d"%ReportTypeID, text=ReportTypeName)
 			self.selection_set(self.get_children("")[0])
 		elif call_widget.tag_has("Location",item):
 			pass
@@ -1086,10 +1119,53 @@ class ReportTypeTree(Treeview):
 		self.db.close()
 	
 		
-class Config:
-	def __init__(self,icon,dbfile):
-		self.icon=icon
-		self.dbfile=dbfile
+class Options:
+	"""Class to hold all user defined option"""
+	
+	def __init__(self):
+		"""Class Options init function"""
+		path=os.path.dirname(os.path.realpath(__file__))
+		path = '/'.join(path.split('\\'))		
+		self.configfile=path+"/"+"config.xml"
+		
+		###LOAD IN DEFAULTS FIRST###
+		
+		##general##
+		self.dbfile=path+"/"+"stk.db"		
+		self.maxlines=500
+		
+		##serial#
+		self.serial_port="COM3" #change later
+		self.serial_baudrate=9600
+		self.serial_bytesize=8
+		self.serial_parity='E'
+		self.serial_stopbits=1
+		self.serial_autoconnect=True
+		
+		self.load()
+		
+	def load(self):
+		"""Function to load options from config.xml"""
+		options=etree.parse(self.configfile).getroot()
+		for child in options:
+			try:
+				value=eval(child.text)
+			except:
+				value=child.text
+			setattr(self,child.tag,value)
+			#print child.tag,value,getattr(self,child.tag),type(getattr(self,child.tag))
+			
+	def save(self):
+		"""Function to save current options to config.xml"""
+		root = etree.Element("options")
+		for key, value in sorted(vars(self).iteritems()):
+			if key!='configfile': #skip this one
+				etree.SubElement(root,key).text=str(value)
+				
+		et=etree.ElementTree(root)
+		prettyxml = minidom.parseString(etree.tostring(root)).toprettyxml()
+		with open(self.configfile, "w") as f:
+			f.write(prettyxml)		
 		
 if __name__ == "__main__":
 	main()

@@ -7,7 +7,7 @@ from datetime import datetime,date,timedelta
 import tkMessageBox
 import time
 import re
-import serial
+import serial #requires version 2.7
 import sqlite3
 import serial.tools.list_ports
 import os
@@ -16,9 +16,11 @@ import csv
 def main():
 	
 	stk=STK()
-				
-	stk.t.focus_force()
-	mainloop()				
+	try:
+		stk.t.focus_force()
+	except:
+		return
+	mainloop()
 	
 class STK:
 	def __init__(self):
@@ -133,13 +135,8 @@ class STK:
 		self.dbfile=self.path+"/"+"stk.db"
 		
 		crashfile=self.path+"/"+"crash.log"
-		sys.stderr = open(crashfile, 'a')
-		
-		if not os.path.isfile(self.dbfile):
-			self.create_database()
-		
-		#initialize configuration.  Later this will probably come from config file
-		self.config=Config(self.icon,self.dbfile)
+		#sys.stderr = open(crashfile, 'a')
+
 		
 		#initialize other variables
 		self.report={}
@@ -152,14 +149,36 @@ class STK:
 		
 		#config
 		self.maxrows=500
+		self.dbversion="1.0"
 		#add serial parameters here
-				
+		
+		if not os.path.isfile(self.dbfile):
+			self.create_database()		
+		
+		#initialize configuration.  Later this will probably come from config file
+		self.config=Config(self.icon,self.dbfile)		
+		
+		#check if db version matches STK version
+		db=sqlite3.connect(self.dbfile)
+		c=db.cursor()
+		
+		c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
+		result=c.fetchone()
+		if result is not None:
+			version=result[0]
+		else:
+			version=""
+		if version!=self.dbversion:
+			tkMessageBox.showerror("Database Mismatch","Database version does not match application version.")
+			self.exit(confirm=False)
+			return
+		
 		###Startup Functions###
 		self.update_ports()
 		self.update_time()
 	
 	#function run when window closed from any way except File->Exit
-	#uncomment one line and comment the other.  For testing its easier if the X closes the program
+	
 	def on_closing(self):
 		if True:
 			if hasattr(self, 'an_win') and self.an_win.winfo_exists():
@@ -173,9 +192,10 @@ class STK:
 		self.exit()
 	
 	#function which runs on exit which makes sure everything is closed out.
-	def exit(self):
-		if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
-			return
+	def exit(self,confirm=True):
+		if confirm:
+			if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
+				return
 		try:
 			self.db.close()
 		except:
@@ -215,13 +235,30 @@ class STK:
 	
 	#function to connect to a serial port and begin monitoring for reports
 	def serial_connect(self,port):
+		m=re.search(r"\ACOM(\d)\Z",port)
+
+		#needed for pyserial 2.7
+		if m:
+			portname=int(m.group(1))-1
+		else:
+			portname=port
+		
 		try:
-			self.serial=serial.Serial(port, timeout=0)
+			#serial 2.7/3.4 support
+			try:
+				self.serial=serial.Serial(portname, timeout=0)
+			except:
+				self.serial=serial.Serial(port, timeout=0)			
 		except serial.SerialException:
 			tkMessageBox.showerror("Serial Error", "Error opening com port %s."%port)
 			self.log_error("Error opening com port %s."%port)
 			return
-		self.serial.reset_input_buffer()
+		
+		#serial 2.7/3.4 support
+		try:
+			self.serial.flushInput()
+		except:
+			self.serial.reset_input_buffer()
 		
 		self.log_process("Connected to %s" % (port,))
 		self.menubar.entryconfigure(2, state=DISABLED)
@@ -467,18 +504,29 @@ class STK:
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
 		
+		#check if machinename is set. Offer to set it if not. Only for learning.
+		if self.learning:
+			c.execute('''SELECT MachineName FROM config WHERE rowid = 1''')
+			result=c.fetchone()
+			if result is not None:
+				name=result[0]
+				if name is None:
+					response=tkMessageBox.askyesno("Add Machine Name?","Machine name has not been set.\nWould you like to update name to:\n%s?"%self.report['machine'])
+					if response:
+						c.execute('''UPDATE config SET MachineName=? WHERE rowid = 1''',(self.report['machine'],))
+						self.db.commit()
+		
 		#check/add reportType exists
 		c.execute('''SELECT reportTypeID FROM reportTypes WHERE ReportTypeName = ?''',(self.report['name'],))
 		result=c.fetchone()
 		if result:
 			ReportTypeID=result[0]
 		elif self.learning:
-			c.execute('''INSERT INTO reportTypes VALUES (NULL,?)''', (self.report['name'],))
+			c.execute('''INSERT INTO reportTypes (ReportTypeID, ReportTypeName) VALUES (NULL,?)''', (self.report['name'],))
 			ReportTypeID=c.lastrowid
 			self.log_process("New report type %s added to database"%self.report['name'])
 		elif not result:
 			self.log_error("Report Type Missing from Database: %s" % self.report['name'])
-			self.db.commit()
 			return
 		
 		#check/add location exists
@@ -487,12 +535,11 @@ class STK:
 		if result:
 			LocationID=result[0]
 		elif self.learning:
-			c.execute('''INSERT INTO locations VALUES (NULL,?)''', (self.report['location'],))
+			c.execute('''INSERT INTO locations (LocationID, LocationName) VALUES (NULL,?)''', (self.report['location'],))
 			LocationID=c.lastrowid
 			self.log_process("New location %s added to database"%self.report['location'])
 		else:
 			self.log_error("Location Missing from Database: %s" % self.report['location'])
-			self.db.commit()
 			return
 		
 		#check if grade exists.  This is always "learning", except when "learning"... (doesn't add grades when configuring)
@@ -505,55 +552,102 @@ class STK:
 					c.execute('''UPDATE grades SET GradeName=? WHERE GradeID = ?''',(self.report['gradename'],GradeID))
 					self.log_process("Updated grade %s name from %s to %s"%(self.report['gradecode'],result[1],self.report['gradename']))
 			else:
-				c.execute('''INSERT INTO grades VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
+				c.execute('''INSERT INTO grades (GradeID, GradeCode, GradeName) VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
 				GradeID=c.lastrowid
 				self.log_process("Added missing grade %s %s"%(self.report['gradecode'],self.report['gradename']))
-		
-		#insert report here.  Do not do if learning
-		if not self.learning:
-			c.execute('''INSERT INTO reports VALUES (NULL,?,?,?,?)''', (self.report['timestamp'],ReportTypeID,LocationID,GradeID))
-			ReportID=c.lastrowid
-			self.log_process("%s: %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))
+			self.db.commit()
 		
 		#check/add sensor(s) and label(s) exists
 		for sensor in self.report['data']:
+			
+			#check if sensor exists
 			c.execute('''SELECT SensorID FROM sensors WHERE SensorName = ? and LocationID = ?''',(sensor['sensor'],LocationID))
 			result=c.fetchone()
 			if result:
 				SensorID = result[0]
 			elif self.learning:
-				c.execute('''INSERT INTO sensors VALUES (NULL,?,?)''', (sensor['sensor'],LocationID))
+				c.execute('''INSERT INTO sensors (SensorID,SensorName,LocationID) VALUES (NULL,?,?)''', (sensor['sensor'],LocationID))
 				SensorID=c.lastrowid
 				self.log_process("New sensor %s at location %s added to database"%(sensor['sensor'],self.report['location']))
 			else:
-				self.db.commit()
 				self.log_error("Sensor %s missing from Database at location %s" % (sensor['sensor'],self.report['location']))
-				return
+				continue
+			
+			#check/add reportConfig exists
+			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
+			result=c.fetchone()
+			if result:
+				ReportConfigID=result[0]
+			elif self.learning:
+				c.execute('''INSERT INTO reportConfig (ReportConfigID, SensorID, ReportTypeID, ReportSource, Active, TriggerTagID) VALUES (NULL,?,?,0,1,NULL)''', (SensorID,ReportTypeID))
+				ReportConfigID=c.lastrowid
+				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
+			elif not result:
+				self.log_error("Report %s %s %s missing from Database" % (sensor['sensor'],self.report['location'],self.report['name']))
+				continue	
+			
+			#insert report here.  Do not do if learning
+			if not self.learning:
+				c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
+				ReportID=c.lastrowid
+				self.db.commit()
+				
+			valid=True
 			for i,label in enumerate(sensor['labels']):
-				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and SensorID = ?''',(label,SensorID))
+				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(label,ReportConfigID))
 				result=c.fetchone()
 				if result:
 					LabelID = result[0]
 				elif self.learning:
-					c.execute('''INSERT INTO labels VALUES (NULL,?,?)''', (label,SensorID))
+					c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL)''', (label,ReportConfigID))
 					LabelID=c.lastrowid
 					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
 				else:
-					self.db.commit()
+					#self.db.commit()
 					self.log_error("Label %s missing from Database in location %s, sensor %s" % (label,self.report['location'],sensor['sensor']))
-					return
+					valid=False
+					continue
 				if not self.learning:
-					c.execute('''INSERT INTO reportData VALUES (?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
-				
-		#commit and close every time. Most of the time we process 1-2 reports at a time.
-		self.db.commit()
+					c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
+			if valid:
+				self.db.commit()
+				self.log_process("%s: %s, %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],sensor['sensor'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
+			else:
+				self.db.rollback()
+				c.execute("""DELETE FROM reports WHERE ReportID = ?""",(ReportID,))
+				c.execute("""UPDATE SQLITE_SEQUENCE SET seq = ? WHERE name = 'reports'""",(ReportID-1,))
+				self.db.commit()
+				continue
+		#close every time. Most of the time we process multple reports at a time.
+			
 		self.db.close()
 		
 	def create_database(self):
 		"""Method to create a blank database in the correct format.  Run if database does not exists"""
+		answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for the correct database?")
+		if answer:
+			dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
+			self.dbfile=dbfile
+			return		
 		
-		#Placeholder for now
-		print "database does not exist"
+		tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.dbfile)
+		self.db = sqlite3.connect(self.dbfile)
+		c=self.db.cursor()		
+		c.execute("""CREATE TABLE "config" ( `DatabaseVersion` TEXT NOT NULL, `MachineName` TEXT DEFAULT NULL, `CustomerName` TEXT DEFAULT NULL, `CustomerLocation` TEXT DEFAULT NULL )""")
+		c.execute("""CREATE TABLE "grades" ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE "labels" ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL , TagID TEXT DEFAULT NULL)""")
+		c.execute("""CREATE TABLE "locations" ( `LocationID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LocationName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE "reportConfig" ( `ReportConfigID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorID` INTEGER NOT NULL, `ReportTypeID` INTEGER, `ReportSource` INTEGER , Active INTEGER DEFAULT 1, TriggerTagID INTEGER DEFAULT NULL)""")
+		c.execute("""CREATE TABLE "reportData" ( `ReportDataID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportID` INTEGER NOT NULL, `LabelID` INTEGER NOT NULL, `Value` NUMERIC NOT NULL )""")
+		c.execute("""CREATE TABLE "reportTypes" ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
+		c.execute("""CREATE TABLE "reports" ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE "sensors" ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
+		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportTypeID as ReportTypeID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
+		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
+		c.execute("""INSERT INTO config (DatabaseVersion, MachineName, CustomerName, CustomerLocation) VALUES (?,NULL,NULL,NULL)""",(self.dbversion,))
+		self.db.commit()
+		self.db.close()
+		
 		
 
 class ReportConfig:
@@ -567,9 +661,12 @@ class ReportConfig:
 		self.win.geometry("800x600")
 		self.win.minsize(800,600)
 		
-		#split window into two frames
-		report_frame=Frame(self.win, width=270)
-		report_frame.pack(fill=Y, side=LEFT)
+		#split window into two panes
+		paned=PanedWindow(self.win,orient=HORIZONTAL)
+		paned.pack(fill=BOTH,expand=1)
+		
+		report_frame=Frame(paned, width=270)
+		paned.add(report_frame, minsize=270)
 		report_frame.grid_propagate(0)
 		report_frame.columnconfigure(0, weight = 1)
 		report_frame.columnconfigure(1, weight = 0)
@@ -577,8 +674,8 @@ class ReportConfig:
 		report_frame.rowconfigure(1, weight = 0)
 		report_frame.rowconfigure(2, weight = 0)
 		
-		data_frame=LabelFrame(self.win,text="Report Configuration")
-		data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
+		data_frame=LabelFrame(paned,text="Report Configuration")
+		paned.add(data_frame)
 		
 		rt_lframe=LabelFrame(report_frame,text="Machine Structure")
 		rt_lframe.grid(column=0,row=0,sticky=W+E+N+S,padx=2)
@@ -590,10 +687,15 @@ class ReportConfig:
 		structure_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
 		structure_remove_button=Button(rt_lframe,text="Remove Item",width=1,state=DISABLED)
 		structure_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		report_tree=StructureTree(rt_lframe,config.dbfile)
-		report_tree.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		rt_sframe=Frame(rt_lframe)
+		rt_sframe.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		rt_vscroll = Scrollbar(rt_sframe)
+		rt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)			
+		report_tree=StructureTree(rt_sframe,config.dbfile)
+		report_tree.pack(side=BOTTOM, fill=BOTH, expand=True)
 		report_tree['show']='tree'
-		
+		rt_vscroll.config(command=report_tree.yview)
+		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
 		tt_lframe=LabelFrame(report_frame,text="Report Types")
 		tt_lframe.grid(column=0,row=1,sticky=W+E+N+S,padx=2)
@@ -605,10 +707,17 @@ class ReportConfig:
 		type_add_button.grid(column=0,row=1,sticky=W+E+N+S,padx=2,pady=2)
 		type_remove_button=Button(tt_lframe,text="Remove Item",width=1,state=DISABLED)
 		type_remove_button.grid(column=1,row=1,sticky=W+E+N+S,padx=2,pady=2)
-		type_tree=ReportTypeTree(tt_lframe,self.dbfile)
+		tt_sframe=Frame(tt_lframe)
+		tt_sframe.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		tt_vscroll = Scrollbar(tt_sframe)
+		tt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)							
+		type_tree=ReportTypeTree(tt_sframe,self.dbfile)
 		type_tree['height']=5
-		type_tree.grid(column=0,row=0,columnspan=2,sticky=W+E+N+S,padx=2,pady=2)
+		type_tree.pack(side=BOTTOM, fill=BOTH, expand=True)
 		type_tree['show']='tree'
+		tt_vscroll.config(command=type_tree.yview)
+		type_tree.configure(yscrollcommand=tt_vscroll.set)		
+			
 		
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",self.button_states,add="+")
@@ -679,12 +788,17 @@ class DataNumerical:
 		self.an_win.geometry("800x600")
 		self.an_win.minsize(800,600)
 		
-		#split window into two frames
-		report_frame=Frame(self.an_win, width=225)
-		report_frame.pack(fill=Y, side=LEFT)
+		#split window into two panes
+		paned=PanedWindow(self.an_win,orient=HORIZONTAL)
+		paned.pack(fill=BOTH,expand=1)		
+		
+		report_frame=Frame(paned)
+		paned.add(report_frame, minsize=250, padx=2)
+		#report_frame.pack(fill=Y, side=LEFT)
 		report_frame.pack_propagate(0)
-		data_frame=Frame(self.an_win)
-		data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
+		data_frame=Frame(paned)
+		paned.add(data_frame, padx=2)
+		#data_frame.pack(fill=BOTH, side=RIGHT, expand=True)
 		
 		#data frame
 		data_tree=Treeview(data_frame,selectmode="browse", show="tree")
@@ -711,42 +825,56 @@ class DataNumerical:
 		self.filter_start = StringVar()
 		self.filter_end = StringVar()
 		
-		filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
-		filter_frame.pack(side=BOTTOM, fill=X)
+		#filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
+		ff_lframe=LabelFrame(report_frame,text="Time Filter")
+		ff_lframe.pack(side=BOTTOM, fill=X)
+		filter_frame=Frame(ff_lframe,width=225,height=200)
+		filter_frame.pack(side=BOTTOM, fill=BOTH, padx=2, pady=2)
 		filter_frame.pack_propagate(0)
 		#move code starting here to new class
 		filter_frame.columnconfigure(0, weight = 1)
 		filter_frame.columnconfigure(1, weight = 1)
-		Label(filter_frame,text="Filter",justify=LEFT).grid(row=0,column=0,columnspan=2,sticky=W+E+N+S)
-		Radiobutton(filter_frame, text="Last 5 days", variable=self.filter_select, value=0,bg="white",command=self.change_filter).grid(row=1,column=0,sticky=W)
-		Radiobutton(filter_frame, text="One Week", variable=self.filter_select, value=1,bg="white",command=self.change_filter).grid(row=1,column=1,sticky=W)
-		Radiobutton(filter_frame, text="One Month", variable=self.filter_select, value=2,bg="white",command=self.change_filter).grid(row=2,column=0,sticky=W)
-		Radiobutton(filter_frame, text="One Year", variable=self.filter_select, value=3,bg="white",command=self.change_filter).grid(row=2,column=1,sticky=W)
-		Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,bg="white",command=self.change_filter).grid(row=3,column=0,sticky=W)
-		Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,bg="white",command=self.change_filter).grid(row=3,column=1,sticky=W)
+		Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,command=self.change_filter).grid(row=1,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,command=self.change_filter).grid(row=1,column=1,sticky=W)
+		Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,command=self.change_filter).grid(row=2,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,command=self.change_filter).grid(row=2,column=1,sticky=W)
+		Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,command=self.change_filter).grid(row=3,column=0,sticky=W)
+		Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,command=self.change_filter).grid(row=3,column=1,sticky=W)
 		self.filter_select.set(0)
-		self.filter_start.set((date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
-		self.filter_end.set(date.today().strftime("%Y-%m-%d"))
-		Label(filter_frame, text="Start",bg="white").grid(row=4,column=0)
-		Label(filter_frame, text="End",bg="white").grid(row=4,column=1)
+		self.filter_start.set((datetime.now()-timedelta(days=7)).strftime("%Y-%m-%d %H:%M"))
+		self.filter_end.set(datetime.now().strftime("%Y-%m-%d %H:%M"))
+		Label(filter_frame, text="Start").grid(row=4,column=0)
+		Label(filter_frame, text="End").grid(row=4,column=1)
 		start_entry=Entry(filter_frame, textvariable=self.filter_start,bg="white",state='disabled',justify='center')
 		start_entry.grid(row=5,column=0)
 		end_entry=Entry(filter_frame, textvariable=self.filter_end,bg="white",state='disabled',justify='center')
 		end_entry.grid(row=5,column=1)
 		#move code ending here to new class
 		
-		type_tree=ReportTypeTree(report_frame,self.dbfile)
-		type_tree.config(height=3)
-		type_tree.column("#0", minwidth=223,width=223,stretch=False)
-		type_tree.pack(side=BOTTOM,fill=X,anchor=S)
-		type_tree.heading("#0",text="Select Report Type")
+		tt_lframe=LabelFrame(report_frame,text="Report Types")
+		tt_lframe.pack(side=BOTTOM, fill=X)		
+		tt_vscroll = Scrollbar(tt_lframe)
+		tt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)			
+		type_tree=ReportTypeTree(tt_lframe,self.dbfile)
+		tt_lframe.pack(side=BOTTOM, fill=BOTH)		
+		type_tree.config(height=5)
+		type_tree.column("#0",stretch=True)
+		type_tree.pack(side=BOTTOM,fill=X,anchor=S, padx=2, pady=2)
+		tt_vscroll.config(command=type_tree.yview)
+		type_tree.configure(yscrollcommand=tt_vscroll.set)		
 		
-		report_tree=StructureTree(report_frame,self.dbfile)
-		report_tree.column("#0", minwidth=223,width=223,stretch=False)
-		report_tree.pack(side=BOTTOM,fill=Y,expand=True, anchor=S)
+		rt_lframe=LabelFrame(report_frame,text="Machine Structure")
+		rt_lframe.pack(side=BOTTOM, fill=BOTH, expand=True)	
+		rt_vscroll = Scrollbar(rt_lframe)
+		rt_vscroll.pack(side=RIGHT, fill=Y, padx=2, pady=2)				
+		report_tree=StructureTree(rt_lframe,self.dbfile)
+		report_tree.column("#0",stretch=True)
+		report_tree.pack(side=LEFT,fill=BOTH,expand=True, anchor=S, padx=2, pady=2)
+		rt_vscroll.config(command=report_tree.yview)
+		report_tree.configure(yscrollcommand=rt_vscroll.set)		
+		
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")
-		report_tree.heading("#0",text="Select Sensor")
 
 		self.report_tree=report_tree
 		self.type_tree=type_tree
@@ -785,39 +913,37 @@ class DataNumerical:
 		#check what filter is selected and calculate end date and duration to subtract in sql statement
 		filter=self.filter_select.get()
 		if filter==0:
-			enddate=date.today()
-			duration='-5 days'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=1)
 		elif filter==1:
-			enddate=date.today()
-			duration='-1 week'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=7)
 		elif filter==2:
-			enddate=date.today()
-			duration='-1 month'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=30)
 		elif filter==3:
-			enddate=date.today()
-			duration='-1 year'
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=365)
 		elif filter==4:
-			enddate=date.today()
-			duration=None
+			enddate=datetime.now()
+			startdate=datetime.strptime("1970-01-01 00:00","%Y-%m-%d %H:%M")
 		elif filter==5:
 			try:
-				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d")
+				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d %H:%M")
 			except ValueError:
-				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
 				return
 			try:
-				startdate=datetime.strptime(self.filter_start.get().strip(),"%Y-%m-%d")
+				startdate=datetime.strptime(self.filter_start.get().strip(),"%Y-%m-%d %H:%M")
 			except ValueError:
-				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
 				return
-			days=enddate-startdate
-			if days.days<1:
+			if enddate<=startdate:
 				tkMessageBox.showerror("Invalid Dates","End date must be after start date.", parent=self.an_win)
 				return
-			duration="-%s days"%days.days
 		
-		
-
+		#set starttime.seconds to zero just to avoid confusion
+		startdate=startdate.replace(second=0)
 		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
@@ -833,18 +959,10 @@ class DataNumerical:
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
 		
-		if not duration:
-			c.execute("""SELECT min(timestamp) from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=?""",(LocationID,SensorID,ReportTypeID))
-			results=c.fetchone()
-			if results:
-				startdate=datetime.strptime(results[0],"%Y-%m-%d %H:%M:%S").date()
-				days=enddate-startdate
-				duration="-%s days"%(days.days)
-			 
-		
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,duration,enddate)) 
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
 		results=c.fetchall()
 		if not results:
+			self.data_tree.insert("",END,text="No data found")
 			self.data_tree['show']='tree'
 			self.csv_button.config(state='disabled')
 			return
@@ -856,12 +974,12 @@ class DataNumerical:
 		self.data_tree.column("#0",width=160)
 		self.data_tree.heading("#0",text="TIMESTAMP")
 		for LabelName in LabelNames:
-			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.5)
+			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.25)
 			w=max(w,75)
 			self.data_tree.column(LabelName,width=w)
 			self.data_tree.heading(LabelName,text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=date('now',?) and date(timestamp)<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,duration,enddate))
+		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,startdate,enddate))
 		for ReportID,timestamp in c.fetchall():
 			c1=self.db.cursor()
 			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))
@@ -885,19 +1003,17 @@ class DataNumerical:
 		with open(outfile, 'wb') as csvfile:
 			writer = csv.writer(csvfile, delimiter=',')
 			writer.writerow(timestamp + list(self.data_tree['columns']))
-			#print ".".join(self.data_tree['columns'])
 			for report in self.data_tree.get_children():
 				timestamp=[]
 				timestamp.append(self.data_tree.item(report)['text'])
 				row=list(str(x) for x in self.data_tree.item(report)['values'])
 				line=','.join(timestamp+row)
 				writer.writerow(timestamp+row)
-				#print line
 	
 class StructureTree(Treeview):
 	
 	def __init__(self,parent,dbfile):
-		Treeview.__init__(self,parent,selectmode="browse")
+		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.column("#0",stretch=True)
 		self.dbfile=dbfile
 		self.update_structure()
@@ -907,13 +1023,25 @@ class StructureTree(Treeview):
 		self.delete(*self.get_children())
 		self.db = sqlite3.connect(self.dbfile)
 		c=self.db.cursor()
-		c.execute("""SELECT DISTINCT LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName from v_reportData ORDER BY LocationName, ReportTypeName,SensorID""")
-		for LocationID,LocationName,ReportTypeID,ReportTypeName,SensorID,SensorName in c.fetchall():
+		c.execute("""SELECT MachineName FROM config WHERE rowid=1""")
+		result=c.fetchone()
+		if result is not None:
+			result=result[0]
+		if result is not None:
+			MachineName=result
+		else:
+			MachineName="MACHINE"
+		
+		self.insert("", END, MachineName, text=MachineName, tags="Machine",open=True)
+		
+		c.execute("""SELECT DISTINCT LocationID,LocationName,SensorID,SensorName from v_structure ORDER BY LocationName,SensorID""")
+		for LocationID,LocationName,SensorID,SensorName in c.fetchall():
 			LocationLabel="Location_%d"%LocationID
 			ReportTypeLabel="Location_%d"%LocationID
 			LocationLabel="Location_%d"%LocationID
 			if not self.exists("Location_%d"%LocationID):
-				self.insert("", END, "Location_%d"%LocationID, text=LocationName, tags="Location")
+				#self.insert("", END, "Location_%d"%LocationID, text=LocationName, tags="Location")
+				self.insert(MachineName, END, "Location_%d"%LocationID, text=LocationName, tags="Location")
 			if not self.exists("Sensor_%d"%SensorID):
 				self.insert("Location_%d"%LocationID, END, "Sensor_%d"%SensorID, text=SensorName,tags="Sensor")		
 		c.close()
@@ -922,7 +1050,7 @@ class StructureTree(Treeview):
 class ReportTypeTree(Treeview):
 	
 	def __init__(self,parent,dbfile):
-		Treeview.__init__(self,parent,selectmode="browse")
+		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.dbfile=dbfile
 		self.column("#0",stretch=True)
 		
@@ -938,7 +1066,7 @@ class ReportTypeTree(Treeview):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
 			ReportTypeID=1
-			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_reportData WHERE LocationID=? and SensorID=? ORDER BY ReportTypeName""",(LocationID,SensorID))
+			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
 				self.generate_button.config(state='disabled')
@@ -950,6 +1078,8 @@ class ReportTypeTree(Treeview):
 			self.selection_set(self.get_children("")[0])
 		elif call_widget.tag_has("Location",item):
 			pass
+		elif call_widget.tag_has("Machine",item):
+			pass		
 		else:
 			tkMessageBox.showerror("Error","Invalid item tag",parent=call_widget)
 		c.close()

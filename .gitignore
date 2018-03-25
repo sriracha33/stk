@@ -1,2 +1,3 @@
-stk.db
+*.db
 *.log
+/dist

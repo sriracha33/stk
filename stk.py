@@ -155,27 +155,8 @@ class STK:
 		self.learning=False
 		
 		#config
-		#self.maxrows=self.options.maxlines
 		self.dbversion="1.0"
-		#add serial parameters here
-		
-		if not os.path.isfile(self.options.dbfile):
-			self.create_database()		
-		
-	
-		
-		#check if db version matches STK version
-		db=sqlite3.connect(self.options.dbfile)
-		c=db.cursor()
-		
-		c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
-		result=c.fetchone()
-		if result is not None:
-			version=result[0]
-		else:
-			version=""
-		if version!=self.dbversion:
-			tkMessageBox.showerror("Database Mismatch","Database version does not match application version.")
+		if not self.init_database():
 			self.exit(confirm=False)
 			return
 		
@@ -227,9 +208,9 @@ class STK:
 	
 	#function to clear out the text display widget.
 	def clear_window(self):
-		self.t.configure(state=NORMAL)
+		self.t.configure(state='normal')
 		self.t.delete('1.0','end')
-		self.t.configure(state=DISABLED	)
+		self.t.configure(state='disabled')
 	
 	#function which gets current list of serial ports and makes connect menu show them
 	def update_ports(self):
@@ -301,7 +282,7 @@ class STK:
 		self.serial.close()
 		self.t.after_cancel(self.serialalarm)
 		self.update_ports()
-		self.menubar.entryconfigure(2, state=NORMAL)
+		self.menubar.entryconfigure(2, state='normal')
 		self.statusicon.itemconfigure('all', fill="red")
 		self.statustext.config(text="Disconnected")
 		
@@ -654,17 +635,60 @@ class STK:
 			
 		self.db.close()
 		
-	def create_database(self):
+	def init_database(self):
 		"""Method to create a blank database in the correct format.  Run if database does not exists"""
-		answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for the correct database?")
-		if answer:
-			dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
-			self.options.dbfile=dbfile
-			return		
+		if self.check_database(self.options.dbfile):
+			return True
 		
-		tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.options.dbfile)
-		self.db = sqlite3.connect(self.options.dbfile)
-		c=self.db.cursor()		
+		#dbfile=self.option.dbfile
+		
+		if not os.path.isfile(self.options.dbfile):
+			answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for a current database?")
+			if answer:
+				self.options.dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
+				if self.check_database(self.options.dbfile):
+					self.options.save()
+					return True
+					
+		answer=tkMessageBox.askyesno("Invalid Database","Would you like to create a new database?")
+		if answer:
+			self.options.dbfile=asksaveasfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db',confirmoverwrite=False)
+			if not self.options.dbfile:
+				tkMessageBox.showerror("Database Error","No Database Selected")
+				return False
+			if os.path.isfile(self.options.dbfile):
+				tkMessageBox.showerror("Database Error","Cannot Overwrite Existing Database")
+				return False
+			self.create_database()
+			self.options.save()
+			return True
+		else:
+			return False
+			
+	def check_database(self,dbfile):
+		if os.path.isfile(dbfile):
+			#check if db version matches STK version
+			db=sqlite3.connect(dbfile)
+			c=db.cursor()				
+			c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
+			result=c.fetchone()
+			if result is not None:
+				version=result[0]
+			else:
+				return False
+			if version==self.dbversion:
+				return True
+			else:
+				tkMessageBox.showinfo("Incorrect Database Version","Database Version does not match application version.")
+				return False
+		else:
+			tkMessageBox.showinfo("File Not Found","Database File Not Found")
+			return False
+		
+	def create_database(self):
+		#tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.options.dbfile)
+		db = sqlite3.connect(self.options.dbfile)
+		c=db.cursor()		
 		c.execute("""CREATE TABLE "config" ( `DatabaseVersion` TEXT NOT NULL, `MachineName` TEXT DEFAULT NULL, `CustomerName` TEXT DEFAULT NULL, `CustomerLocation` TEXT DEFAULT NULL )""")
 		c.execute("""CREATE TABLE "grades" ( `GradeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `GradeCode` INTEGER NOT NULL, `GradeName` TEXT NOT NULL )""")
 		c.execute("""CREATE TABLE "labels" ( `LabelID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `LabelName` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL , TagID TEXT DEFAULT NULL)""")
@@ -677,9 +701,8 @@ class STK:
 		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportTypeID as ReportTypeID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
 		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
 		c.execute("""INSERT INTO config (DatabaseVersion, MachineName, CustomerName, CustomerLocation) VALUES (?,NULL,NULL,NULL)""",(self.dbversion,))
-		self.db.commit()
-		self.db.close()
-		
+		db.commit()
+		db.close()		
 		
 
 class ReportConfig:

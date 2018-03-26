@@ -166,7 +166,7 @@ class STK:
 		if self.options.serial_autoconnect and self.options.serial_port:
 			self.serial_connect()
 		else:
-			if not self.options.serial_port:
+			if self.options.serial_port:
 				tkMessageBox.showinfo("Serial Autoconnect Failed","Serial Autoconnect Failed.\nAutoconnect is enabled but no port was specified")
 			self.update_ports()
 		
@@ -1121,7 +1121,7 @@ class ReportTypeTree(Treeview):
 		if call_widget.tag_has("Sensor",item):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
-			ReportTypeID=1
+			#ReportTypeID=1
 			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
@@ -1158,17 +1158,20 @@ class Options:
 		self.maxlines=500
 		
 		##serial#
-		self.serial_port="COM3" #change later
+		self.serial_port=None #change later
 		self.serial_baudrate=9600
 		self.serial_bytesize=8
 		self.serial_parity='E'
 		self.serial_stopbits=1
-		self.serial_autoconnect=True
+		self.serial_autoconnect=False
 		
 		self.load()
+		self.save()
 		
 	def load(self):
 		"""Function to load options from config.xml"""
+		if not os.path.isfile(self.configfile):
+			return
 		options=etree.parse(self.configfile).getroot()
 		for child in options:
 			try:
@@ -1182,7 +1185,7 @@ class Options:
 		"""Function to save current options to config.xml"""
 		root = etree.Element("options")
 		for key, value in sorted(vars(self).iteritems()):
-			if key!='configfile': #skip this one
+			if key!='configfile': #skip this one. Hardcoded ftw.
 				etree.SubElement(root,key).text=str(value)
 				
 		et=etree.ElementTree(root)

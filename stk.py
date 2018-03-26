@@ -166,7 +166,7 @@ class STK:
 		if self.options.serial_autoconnect and self.options.serial_port:
 			self.serial_connect()
 		else:
-			if self.options.serial_port:
+			if self.options.serial_autoconnect:
 				tkMessageBox.showinfo("Serial Autoconnect Failed","Serial Autoconnect Failed.\nAutoconnect is enabled but no port was specified")
 			self.update_ports()
 		
@@ -637,33 +637,34 @@ class STK:
 		
 	def init_database(self):
 		"""Method to create a blank database in the correct format.  Run if database does not exists"""
-		if self.check_database(self.options.dbfile):
-			return True
-		
-		#dbfile=self.option.dbfile
-		
-		if not os.path.isfile(self.options.dbfile):
-			answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for a current database?")
+		while not self.check_database(self.options.dbfile):
+	
+			if not os.path.isfile(self.options.dbfile):
+				answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for a current database?")
+				if answer:
+					self.options.dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
+					if self.check_database(self.options.dbfile):
+						#self.options.save()
+						continue
+	
+			answer=tkMessageBox.askyesno("Invalid Database","Would you like to create a new database?")
 			if answer:
-				self.options.dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
-				if self.check_database(self.options.dbfile):
-					self.options.save()
-					return True
-					
-		answer=tkMessageBox.askyesno("Invalid Database","Would you like to create a new database?")
-		if answer:
-			self.options.dbfile=asksaveasfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db',confirmoverwrite=False)
-			if not self.options.dbfile:
-				tkMessageBox.showerror("Database Error","No Database Selected")
+				dbfile=asksaveasfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db',confirmoverwrite=False)
+				if not dbfile:
+					tkMessageBox.showerror("Database Error","No Database Selected")
+					return False
+				if os.path.isfile(dbfile):
+					tkMessageBox.showerror("Database Error","Cannot Overwrite Existing Database")
+					continue
+				self.options.dbfile=dbfile
+				self.create_database()
+				#self.options.save()
+				continue
+			else:
 				return False
-			if os.path.isfile(self.options.dbfile):
-				tkMessageBox.showerror("Database Error","Cannot Overwrite Existing Database")
-				return False
-			self.create_database()
-			self.options.save()
-			return True
-		else:
-			return False
+			
+		self.options.save()
+		return True
 			
 	def check_database(self,dbfile):
 		if os.path.isfile(dbfile):
@@ -1158,10 +1159,10 @@ class Options:
 		self.maxlines=500
 		
 		##serial#
-		self.serial_port=None #change later
+		self.serial_port=None
 		self.serial_baudrate=9600
 		self.serial_bytesize=8
-		self.serial_parity='E'
+		self.serial_parity='N'
 		self.serial_stopbits=1
 		self.serial_autoconnect=False
 		
@@ -1174,11 +1175,13 @@ class Options:
 			return
 		options=etree.parse(self.configfile).getroot()
 		for child in options:
+			#try is to deal with string.  eval on a string is an error
 			try:
 				value=eval(child.text)
 			except:
 				value=child.text
-			setattr(self,child.tag,value)
+			if hasattr(self,child.tag):
+				setattr(self,child.tag,value)
 			#print child.tag,value,getattr(self,child.tag),type(getattr(self,child.tag))
 			
 	def save(self):

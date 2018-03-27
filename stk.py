@@ -113,7 +113,7 @@ class STK:
 		menubar.add_cascade(label="Setup", menu=setupmenu)
 		setupmenu.add_command(label="Auto Serial Report Config", command=self.report_config_auto)
 		setupmenu.add_command(label="Manual Report Config", command=self.report_config_manual)
-		setupmenu.add_command(label='Options', command=self.update_ports)
+		setupmenu.add_command(label='Options', command=self.edit_options)
 		
 		#update window after all setup and complete and make that the minimum size
 		root.update_idletasks()
@@ -155,7 +155,7 @@ class STK:
 		self.learning=False
 		
 		#config
-		self.dbversion="1.0"
+		#self.dbversion=dbversion
 		if not self.init_database():
 			self.exit(confirm=False)
 			return
@@ -677,7 +677,7 @@ class STK:
 				version=result[0]
 			else:
 				return False
-			if version==self.dbversion:
+			if version==self.options.dbversion:
 				return True
 			else:
 				tkMessageBox.showinfo("Incorrect Database Version","Database Version does not match application version.")
@@ -701,10 +701,20 @@ class STK:
 		c.execute("""CREATE TABLE "sensors" ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
 		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportTypeID as ReportTypeID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
 		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
-		c.execute("""INSERT INTO config (DatabaseVersion, MachineName, CustomerName, CustomerLocation) VALUES (?,NULL,NULL,NULL)""",(self.dbversion,))
+		c.execute("""INSERT INTO config (DatabaseVersion, MachineName, CustomerName, CustomerLocation) VALUES (?,NULL,NULL,NULL)""",(self.options.dbversion,))
 		db.commit()
 		db.close()		
 		
+	def edit_options(self):
+		if hasattr(self, 'option_win') and self.option_win.winfo_exists():
+			self.option_win.deiconify()
+			self.option_win.focus_force()
+			self.option_win.lift()
+			return
+		self.option_win = Tkinter.Toplevel()
+		self.option_win.withdraw()
+		self.option_win.tk.call('wm', 'iconphoto', self.option_win._w, self.icon)
+		OptionWindow(self.option_win,self.options)
 
 class ReportConfig:
 	def __init__(self,parent,options):
@@ -1059,13 +1069,83 @@ class DataNumerical:
 				line=','.join(timestamp+row)
 				writer.writerow(timestamp+row)
 
-class Options:
-	"""Class to make an options window and save/load options"""
-	
-	def __init__(self,parent):
+class OptionWindow:
+	def __init__(self,parent,options):
 		self.win=parent
+		self.options=options
+		self.win.geometry("+100+100")
+		self.win.resizable(False,False)
+		self.win.deiconify()
 		
+		validate_integer = self.win.register(self.validate_integer)
+		
+		self.gen_lframe=Tkinter.LabelFrame(self.win,text="General Options")
+		self.gen_lframe.pack(padx=2, fill='x', expand=True)
+		self.gen_lframe.columnconfigure(0,weight=1, uniform="fred")
+		self.gen_lframe.columnconfigure(1,weight=1, uniform="fred")	
+		self.gen_lframe.columnconfigure(2,weight=1, uniform="fred")
+		self.gen_lframe.columnconfigure(3,weight=1, uniform="fred")
+		self.serial_lframe=Tkinter.LabelFrame(self.win,text="Serial Options")
+		self.serial_lframe.pack(padx=2, fill='x', expand=True)
 
+		self.entries={}
+
+		Tkinter.Label(self.gen_lframe,text="Database File").grid(row=0,column=0)
+		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe)
+		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens')
+		self.dbbrowse=Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database)
+		self.dbbrowse.grid(row=0,column=3, sticky='wens')
+		Tkinter.Label(self.gen_lframe,text="Serial Windows Max Lines").grid(row=1,column=0, columnspan=3)
+		self.entries['maxlines']=Tkinter.Entry(self.gen_lframe, validate='all',validatecommand=lambda x='maxlines': validate_integer(x))
+		self.entries['maxlines'].grid(row=1,column=3)
+		Tkinter.Label(self.serial_lframe,text="test2 test test test test\nAnd More Testing").pack()
+
+		for key in self.entries:
+			self.entries[key].insert(0,getattr(self.options,key))
+			self.entries[key]='readonly'
+	
+
+	def browse_database(self):
+		dbfile=askopenfilename(parent=self.win, title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
+		if dbfile is None:
+			return
+		if not os.path.isfile(dbfile):
+			tkMessageBox.showerror("File Not Found","Database File Not Found", parent=self.win);
+			return
+
+		db=sqlite3.connect(dbfile)
+		c=db.cursor()				
+		
+		try:
+			c.execute("""SELECT DatabaseVersion FROM config WHERE rowid=1""")
+		except sqlite3.OperationalError:
+			tkMessageBox.showerror("Invalid Database Version","Database Version not found.", parent=self.win)
+			return			
+		result=c.fetchone()
+		if result is not None:
+			version=result[0]
+		else:
+			tkMessageBox.showerror("Invalid Database Version","Database Version not found.", parent=self.win)
+			return
+		if version==self.options.dbversion:
+			self.dbentry['state']='normal'
+			self.dbentry.delete(0,'end')
+			self.dbentry.insert(0,dbfile)
+			self.dbentry['state']='readonly'
+		else:
+			tkMessageBox.showerror("Incorrect Database Version","Database Version does not match application version.", parent=self.win)
+			return		
+	
+	def validate_integer(self,widget):
+		try:
+			int(newvalue)
+			return True
+		except:
+			self.entries[widget].delete(0,'end')
+			self.entries[widget].insert(0,getattr(self.options.widget))
+			return False
+
+		
 ###Widget Classes###
 	
 class StructureTree(Treeview):
@@ -1154,6 +1234,9 @@ class Options:
 		
 		###LOAD IN DEFAULTS FIRST###
 		
+		##Hard Coded##
+		self.dbversion="1.0"
+		
 		##general##
 		self.dbfile=path+"/"+"stk.db"		
 		self.maxlines=500
@@ -1188,13 +1271,17 @@ class Options:
 		"""Function to save current options to config.xml"""
 		root = etree.Element("options")
 		for key, value in sorted(vars(self).iteritems()):
-			if key!='configfile': #skip this one. Hardcoded ftw.
+			if key!='configfile' and key!='dbversion': #skip these ones.
 				etree.SubElement(root,key).text=str(value)
 				
 		et=etree.ElementTree(root)
 		prettyxml = minidom.parseString(etree.tostring(root)).toprettyxml()
 		with open(self.configfile, "w") as f:
 			f.write(prettyxml)		
-		
+	
+
+				
+			
+			
 if __name__ == "__main__":
 	main()

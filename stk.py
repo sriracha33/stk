@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #from Tkinter import *
 import Tkinter
-from ttk import Treeview, Combobox
+from ttk import Treeview, Combobox, Style
 import tkFont
 from tkFileDialog import *
 from datetime import datetime,date,timedelta
@@ -15,6 +15,7 @@ import sqlite3
 import serial.tools.list_ports
 import os
 import csv
+import sys
 
 def main():
 	
@@ -63,6 +64,11 @@ class STK:
 		
 		self.icon=Tkinter.PhotoImage(data=img)
 		root.call('wm', 'iconphoto', root._w, self.icon)
+		
+		#color fix for XP
+		style=Style()
+		style.map('TCombobox', fieldbackground=[('readonly','white')])
+		style.map('TCombobox', background=[('readonly','white')])
 		
 		#create status bar at the bottom of the window
 		statusbar=Tkinter.Frame(root,borderwidth=1, relief='sunken')
@@ -1081,12 +1087,20 @@ class OptionWindow:
 		
 		self.gen_lframe=Tkinter.LabelFrame(self.win,text="General Options")
 		self.gen_lframe.pack(padx=2, fill='x', expand=True)
-	
+		
 		self.serial_lframe=Tkinter.LabelFrame(self.win,text="Serial Options")
 		self.serial_lframe.pack(padx=2, fill='x', expand=True)
 		
 		self.button_frame=Tkinter.Frame(self.win)
 		self.button_frame.pack(pady=2)
+		
+		self.gen_lframe.rowconfigure(0,weight=1,uniform='all')
+		self.gen_lframe.rowconfigure(1,weight=1,uniform='all')
+		#self.gen_lframe.rowconfigure(2,weight=1,uniform='all')
+		self.serial_lframe.rowconfigure(0,weight=1,uniform='all')
+		self.serial_lframe.rowconfigure(1,weight=1,uniform='all')
+		self.serial_lframe.rowconfigure(2,weight=1,uniform='all')
+		self.serial_lframe.rowconfigure(3,weight=1,uniform='all')
 		
 		self.entries={}
 		self.variables={}
@@ -1098,17 +1112,17 @@ class OptionWindow:
 		Tkinter.Label(self.serial_lframe,text="Byte Size:", anchor='w').grid(row=1,column=2, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Parity:", anchor='w').grid(row=2,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Stop Bits:", anchor='w').grid(row=2,column=2, sticky='wens', padx=2, pady=2)
-		Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database).grid(row=0,column=3, sticky='wens', padx=1)		
-		Tkinter.Button(self.serial_lframe,text="Refresh", command=self.refresh_ports).grid(row=0,column=3, sticky='wns', padx=1)		
+		Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database, width=8,).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
+		Tkinter.Button(self.serial_lframe,text="Refresh", command=self.refresh_ports, width=8).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
 		Tkinter.Button(self.button_frame,text="Save", command=self.save, width=8).pack(side='left', padx=1)
 		Tkinter.Button(self.button_frame,text="Cancel", command=self.cancel, width=8).pack(side='left', padx=1)
 		
-		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe,state='readonly', width=30)
+		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe,state='readonly', readonlybackground='white', width=30)
 		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens', padx=2, pady=2)					
 		self.entries['maxlines']=Tkinter.Spinbox(self.gen_lframe, width=8, from_=25, to=1000, increment=25, state='readonly', readonlybackground='white')
 		self.entries['maxlines'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)		
 		self.entries['serial_port']=Combobox(self.serial_lframe, state='readonly')
-		self.entries['serial_port'].grid(row=0,column=1, sticky='wens', padx=2, pady=2, columnspan=2)		
+		self.entries['serial_port'].grid(row=0,column=1, sticky='wens', padx=2, pady=2, columnspan=2)			
 		self.entries['serial_baudrate']=Combobox(self.serial_lframe, width=8, state='readonly', values=(1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200))
 		self.entries['serial_baudrate'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)
 		self.entries['serial_bytesize']=Combobox(self.serial_lframe, width=8, state='readonly', values=(5 , 6, 7, 8))
@@ -1173,10 +1187,6 @@ class OptionWindow:
 			return
 		if version==self.options.dbversion:
 			self.variables['dbfile'].set(dbfile)
-			#self.dbentry['state']='normal'
-			#self.dbentry.delete(0,'end')
-			#self.dbentry.insert(0,dbfile)
-			#self.dbentry['state']='readonly'
 		else:
 			tkMessageBox.showerror("Incorrect Database Version","Database Version does not match application version.", parent=self.win)
 			return		

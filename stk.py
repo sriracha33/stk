@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #from Tkinter import *
 import Tkinter
-from ttk import Treeview
+from ttk import Treeview, Combobox
 import tkFont
 from tkFileDialog import *
 from datetime import datetime,date,timedelta
@@ -637,14 +637,14 @@ class STK:
 		
 	def init_database(self):
 		"""Method to create a blank database in the correct format.  Run if database does not exists"""
+		changed=False
 		while not self.check_database(self.options.dbfile):
-	
+			changed=True
 			if not os.path.isfile(self.options.dbfile):
 				answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for a current database?")
 				if answer:
 					self.options.dbfile=askopenfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
 					if self.check_database(self.options.dbfile):
-						#self.options.save()
 						continue
 	
 			answer=tkMessageBox.askyesno("Invalid Database","Would you like to create a new database?")
@@ -658,12 +658,14 @@ class STK:
 					continue
 				self.options.dbfile=dbfile
 				self.create_database()
-				#self.options.save()
 				continue
 			else:
 				return False
 			
-		self.options.save()
+		if changed:
+			answer=tkMessageBox.askyesno("Save Default Database?","Would you like this to be your new default database?")
+			if answer:
+				self.options.save('dbfile')
 		return True
 			
 	def check_database(self,dbfile):
@@ -755,9 +757,9 @@ class ReportConfig:
 		rt_sframe=Tkinter.Frame(rt_lframe)
 		rt_sframe.grid(column=0,row=0,columnspan=2,sticky='wens',padx=2,pady=2)
 		rt_vscroll = Tkinter.Scrollbar(rt_sframe)
-		rt_vscroll.pack(side='right', fill='y', padx=2, pady=2)			
+		rt_vscroll.pack(side='right', fill='y', padx=(0,2))			
 		report_tree=StructureTree(rt_sframe,options)
-		report_tree.pack(side='bottom', fill='both', expand=True)
+		report_tree.pack(side='bottom', fill='both', expand=True, padx=(2,0))
 		report_tree['show']='tree'
 		rt_vscroll.config(command=report_tree.yview)
 		report_tree.configure(yscrollcommand=rt_vscroll.set)		
@@ -775,10 +777,10 @@ class ReportConfig:
 		tt_sframe=Tkinter.Frame(tt_lframe)
 		tt_sframe.grid(column=0,row=0,columnspan=2,sticky='wens',padx=2,pady=2)
 		tt_vscroll = Tkinter.Scrollbar(tt_sframe)
-		tt_vscroll.pack(side='right', fill='y', padx=2, pady=2)							
+		tt_vscroll.pack(side='right', fill='y', padx=(0,2))							
 		type_tree=ReportTypeTree(tt_sframe,self.options)
 		type_tree['height']=5
-		type_tree.pack(side='bottom', fill='both', expand=True)
+		type_tree.pack(side='bottom', fill='both', expand=True, padx=(2,0))
 		type_tree['show']='tree'
 		tt_vscroll.config(command=type_tree.yview)
 		type_tree.configure(yscrollcommand=tt_vscroll.set)		
@@ -875,9 +877,9 @@ class DataNumerical:
 		
 		#report frame
 		csv_button=Tkinter.Button(report_frame, text="Save as CSV", command=self.save_csv,state='disabled')#, relief="ridge"
-		csv_button.pack(side="bottom", fill="x")
+		csv_button.pack(side="bottom", fill="x", padx=1,pady=(0,2))
 		generate_button=Tkinter.Button(report_frame, text="Generate Report", command=self.generate_report,state='disabled')#, relief="ridge"
-		generate_button.pack(side="bottom", fill="x")
+		generate_button.pack(side="bottom", fill="x", padx=1,pady=2)
 		
 		##variable##
 		self.filter_select = Tkinter.IntVar()
@@ -913,22 +915,22 @@ class DataNumerical:
 		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
 		tt_lframe.pack(side='bottom', fill='x')		
 		tt_vscroll = Tkinter.Scrollbar(tt_lframe)
-		tt_vscroll.pack(side='right', fill='y', padx=2, pady=2)			
+		tt_vscroll.pack(side='right', fill='y', padx=(0,2), pady=(0,2))			
 		type_tree=ReportTypeTree(tt_lframe,self.options)
 		tt_lframe.pack(side='bottom', fill='both')		
 		type_tree.config(height=5)
 		type_tree.column("#0",stretch=True)
-		type_tree.pack(side='bottom',fill='x',anchor='s', padx=2, pady=2)
+		type_tree.pack(side='bottom',fill='x',anchor='s', padx=(2,0), pady=(0,2))
 		tt_vscroll.config(command=type_tree.yview)
 		type_tree.configure(yscrollcommand=tt_vscroll.set)		
 		
 		rt_lframe=Tkinter.LabelFrame(report_frame,text="Machine Structure")
 		rt_lframe.pack(side='bottom', fill='both', expand=True)	
 		rt_vscroll = Tkinter.Scrollbar(rt_lframe)
-		rt_vscroll.pack(side='right', fill='y', padx=2, pady=2)				
+		rt_vscroll.pack(side='right', fill='y', padx=(0,2), pady=(0,2))				
 		report_tree=StructureTree(rt_lframe,self.options)
 		report_tree.column("#0",stretch=True)
-		report_tree.pack(side='left',fill='both',expand=True, anchor='s', padx=2, pady=2)
+		report_tree.pack(side='left',fill='both',expand=True, anchor='s', padx=(2,0), pady=(0,2))
 		rt_vscroll.config(command=report_tree.yview)
 		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
@@ -1079,59 +1081,74 @@ class OptionWindow:
 		
 		self.gen_lframe=Tkinter.LabelFrame(self.win,text="General Options")
 		self.gen_lframe.pack(padx=2, fill='x', expand=True)
-		self.gen_lframe.columnconfigure(0,weight=1, uniform="general")
-		self.gen_lframe.columnconfigure(1,weight=1, uniform="general")	
-		self.gen_lframe.columnconfigure(2,weight=1, uniform="general")
-		self.gen_lframe.columnconfigure(3,weight=1, uniform="general")
-		self.gen_lframe.rowconfigure(0,weight=1, uniform="general")
-		self.gen_lframe.rowconfigure(1,weight=1, uniform="general")		
+	
 		self.serial_lframe=Tkinter.LabelFrame(self.win,text="Serial Options")
 		self.serial_lframe.pack(padx=2, fill='x', expand=True)
-		self.serial_lframe.pack(padx=2, fill='x', expand=True)
-		self.serial_lframe.columnconfigure(0,weight=1, uniform="general")
-		self.serial_lframe.columnconfigure(1,weight=1, uniform="general")	
-		self.serial_lframe.columnconfigure(2,weight=1, uniform="general")
-		self.serial_lframe.columnconfigure(3,weight=1, uniform="general")
-		self.serial_lframe.rowconfigure(0,weight=1, uniform="general")
-		self.serial_lframe.rowconfigure(1,weight=1, uniform="general")	
-		self.serial_lframe.rowconfigure(3,weight=1, uniform="general")
-
+		
+		self.button_frame=Tkinter.Frame(self.win)
+		self.button_frame.pack(pady=2)
+		
 		self.entries={}
+		self.variables={}
 
 		Tkinter.Label(self.gen_lframe,text="Database File:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
-		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe)
-		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens', padx=2, pady=2)
-		self.dbbrowse=Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database)
-		self.dbbrowse.grid(row=0,column=3, sticky='wens')
 		Tkinter.Label(self.gen_lframe,text="Display Max Lines:", anchor='w').grid(row=1,column=0, sticky='wens', padx=2, pady=2)
-		self.entries['maxlines']=Tkinter.Entry(self.gen_lframe, width=4)
-		self.entries['maxlines'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="COM Port:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
-		self.entries['serial_port']=Tkinter.Entry(self.serial_lframe)
-		self.entries['serial_port'].grid(row=0,column=1, sticky='wens', padx=2, pady=2)		
-		Tkinter.Label(self.serial_lframe,text="Auto-Connect:", anchor='w').grid(row=0,column=2, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Baud Rate:", anchor='w').grid(row=1,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Byte Size:", anchor='w').grid(row=1,column=2, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Parity:", anchor='w').grid(row=2,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Stop Bits:", anchor='w').grid(row=2,column=2, sticky='wens', padx=2, pady=2)
-		self.entries['serial_autoconnect']=Tkinter.Entry(self.serial_lframe, width=4)
-		self.entries['serial_autoconnect'].grid(row=0,column=3, sticky='wns', padx=2, pady=2)		
-		self.entries['serial_baudrate']=Tkinter.Entry(self.serial_lframe, width=4)
+		Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database).grid(row=0,column=3, sticky='wens', padx=1)		
+		Tkinter.Button(self.serial_lframe,text="Refresh", command=self.refresh_ports).grid(row=0,column=3, sticky='wns', padx=1)		
+		Tkinter.Button(self.button_frame,text="Save", command=self.save, width=8).pack(side='left', padx=1)
+		Tkinter.Button(self.button_frame,text="Cancel", command=self.cancel, width=8).pack(side='left', padx=1)
+		
+		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe,state='readonly', width=30)
+		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens', padx=2, pady=2)					
+		self.entries['maxlines']=Tkinter.Spinbox(self.gen_lframe, width=8, from_=25, to=1000, increment=25, state='readonly', readonlybackground='white')
+		self.entries['maxlines'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)		
+		self.entries['serial_port']=Combobox(self.serial_lframe, state='readonly')
+		self.entries['serial_port'].grid(row=0,column=1, sticky='wens', padx=2, pady=2, columnspan=2)		
+		self.entries['serial_baudrate']=Combobox(self.serial_lframe, width=8, state='readonly', values=(1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200))
 		self.entries['serial_baudrate'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)
-		self.entries['serial_bytesize']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_bytesize']=Combobox(self.serial_lframe, width=8, state='readonly', values=(5 , 6, 7, 8))
 		self.entries['serial_bytesize'].grid(row=1,column=3, sticky='wns', padx=2, pady=2)
-		self.entries['serial_parity']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_parity']=Combobox(self.serial_lframe, width=8, state='readonly', values=('N', 'E', 'O', 'M', 'S'))
 		self.entries['serial_parity'].grid(row=2,column=1, sticky='wns', padx=2, pady=2)
-		self.entries['serial_stopbits']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_stopbits']=Combobox(self.serial_lframe, width=8, state='readonly', values=(1, 2))
 		self.entries['serial_stopbits'].grid(row=2,column=3, sticky='wns', padx=2, pady=2)		
-		
-		
+		self.entries['serial_autoconnect']=Tkinter.Checkbutton(self.serial_lframe, text="Autoconnect")
+		self.entries['serial_autoconnect'].grid(row=3,column=0, sticky='wns', padx=2, pady=2, columnspan=2)		
 		
 		for key in self.entries:
-			self.entries[key].insert(0,getattr(self.options,key))
-			self.entries[key]='readonly'
+			widgettype=self.entries[key].winfo_class()
+			if widgettype=='Checkbutton':
+				self.variables[key]=Tkinter.IntVar()
+				self.variables[key].set(getattr(self.options,key))
+				self.entries[key]['variable']=self.variables[key]
+			else:
+				self.variables[key]=Tkinter.StringVar()
+				self.variables[key].set(getattr(self.options,key))
+				self.entries[key]['textvariable']=self.variables[key]
+			
+		self.refresh_ports()
 	
-
+	def save(self):
+		for key,value in self.variables.iteritems():
+			setattr(self.options,key,value.get())
+		self.options.save()
+		self.win.destroy()
+	
+	def cancel(self):
+		self.win.destroy()
+	
+	def refresh_ports(self):
+		comports = sorted(serial.tools.list_ports.comports(), key=lambda x: x[0])
+		values=['None']
+		for port,description,address in comports:
+			values.append(port)
+		self.entries['serial_port']['values']=values
+	
 	def browse_database(self):
 		dbfile=askopenfilename(parent=self.win, title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
 		if dbfile is None:
@@ -1155,10 +1172,11 @@ class OptionWindow:
 			tkMessageBox.showerror("Invalid Database Version","Database Version not found.", parent=self.win)
 			return
 		if version==self.options.dbversion:
-			self.dbentry['state']='normal'
-			self.dbentry.delete(0,'end')
-			self.dbentry.insert(0,dbfile)
-			self.dbentry['state']='readonly'
+			self.variables['dbfile'].set(dbfile)
+			#self.dbentry['state']='normal'
+			#self.dbentry.delete(0,'end')
+			#self.dbentry.insert(0,dbfile)
+			#self.dbentry['state']='readonly'
 		else:
 			tkMessageBox.showerror("Incorrect Database Version","Database Version does not match application version.", parent=self.win)
 			return		
@@ -1266,13 +1284,14 @@ class Options:
 		self.serial_stopbits=1
 		self.serial_autoconnect=False
 		
-		self.load()
-		self.save()
+		#if there was no config file, save the defaults
+		if not self.load():
+			self.save()
 		
 	def load(self):
 		"""Function to load options from config.xml"""
 		if not os.path.isfile(self.configfile):
-			return
+			return False
 		options=etree.parse(self.configfile).getroot()
 		for child in options:
 			#try is to deal with string.  eval on a string is an error
@@ -1283,22 +1302,33 @@ class Options:
 			if hasattr(self,child.tag):
 				setattr(self,child.tag,value)
 			#print child.tag,value,getattr(self,child.tag),type(getattr(self,child.tag))
+		return True
 			
-	def save(self):
-		"""Function to save current options to config.xml"""
-		root = etree.Element("options")
-		for key, value in sorted(vars(self).iteritems()):
-			if key!='configfile' and key!='dbversion': #skip these ones.
-				etree.SubElement(root,key).text=str(value)
-				
-		et=etree.ElementTree(root)
-		prettyxml = minidom.parseString(etree.tostring(root)).toprettyxml()
-		with open(self.configfile, "w") as f:
-			f.write(prettyxml)		
+	def save(self,option=None):
+		"""Function to save current option(s) to config.xml"""
+		if option is None:
+			root = etree.Element("options")
+			for key, value in sorted(vars(self).iteritems()):
+				if key!='configfile' and key!='dbversion': #skip these ones.
+					etree.SubElement(root,key).text=str(value)
+					
+			et=etree.ElementTree(root)
+			prettyxml = minidom.parseString(etree.tostring(root)).toprettyxml()
+			with open(self.configfile, "w") as f:
+				f.write(prettyxml)	
+			print "saved all"
 	
-
-				
-			
+		else:
+			if not os.path.isfile(self.configfile):
+				return			
+			tree=etree.parse(self.configfile)
+			options=tree.getroot()
+			if options.find(option) is not None:
+				options.find(option).text=str(getattr(self,option))
+				tree.write(self.configfile)			
+				print "saved %s"%option
+			else:
+				return
 			
 if __name__ == "__main__":
 	main()

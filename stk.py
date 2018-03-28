@@ -1077,29 +1077,56 @@ class OptionWindow:
 		self.win.resizable(False,False)
 		self.win.deiconify()
 		
-		validate_integer = self.win.register(self.validate_integer)
-		
 		self.gen_lframe=Tkinter.LabelFrame(self.win,text="General Options")
 		self.gen_lframe.pack(padx=2, fill='x', expand=True)
-		self.gen_lframe.columnconfigure(0,weight=1, uniform="fred")
-		self.gen_lframe.columnconfigure(1,weight=1, uniform="fred")	
-		self.gen_lframe.columnconfigure(2,weight=1, uniform="fred")
-		self.gen_lframe.columnconfigure(3,weight=1, uniform="fred")
+		self.gen_lframe.columnconfigure(0,weight=1, uniform="general")
+		self.gen_lframe.columnconfigure(1,weight=1, uniform="general")	
+		self.gen_lframe.columnconfigure(2,weight=1, uniform="general")
+		self.gen_lframe.columnconfigure(3,weight=1, uniform="general")
+		self.gen_lframe.rowconfigure(0,weight=1, uniform="general")
+		self.gen_lframe.rowconfigure(1,weight=1, uniform="general")		
 		self.serial_lframe=Tkinter.LabelFrame(self.win,text="Serial Options")
 		self.serial_lframe.pack(padx=2, fill='x', expand=True)
+		self.serial_lframe.pack(padx=2, fill='x', expand=True)
+		self.serial_lframe.columnconfigure(0,weight=1, uniform="general")
+		self.serial_lframe.columnconfigure(1,weight=1, uniform="general")	
+		self.serial_lframe.columnconfigure(2,weight=1, uniform="general")
+		self.serial_lframe.columnconfigure(3,weight=1, uniform="general")
+		self.serial_lframe.rowconfigure(0,weight=1, uniform="general")
+		self.serial_lframe.rowconfigure(1,weight=1, uniform="general")	
+		self.serial_lframe.rowconfigure(3,weight=1, uniform="general")
 
 		self.entries={}
 
-		Tkinter.Label(self.gen_lframe,text="Database File").grid(row=0,column=0)
+		Tkinter.Label(self.gen_lframe,text="Database File:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
 		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe)
-		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens')
+		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens', padx=2, pady=2)
 		self.dbbrowse=Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database)
 		self.dbbrowse.grid(row=0,column=3, sticky='wens')
-		Tkinter.Label(self.gen_lframe,text="Serial Windows Max Lines").grid(row=1,column=0, columnspan=3)
-		self.entries['maxlines']=Tkinter.Entry(self.gen_lframe, validate='all',validatecommand=lambda x='maxlines': validate_integer(x))
-		self.entries['maxlines'].grid(row=1,column=3)
-		Tkinter.Label(self.serial_lframe,text="test2 test test test test\nAnd More Testing").pack()
-
+		Tkinter.Label(self.gen_lframe,text="Display Max Lines:", anchor='w').grid(row=1,column=0, sticky='wens', padx=2, pady=2)
+		self.entries['maxlines']=Tkinter.Entry(self.gen_lframe, width=4)
+		self.entries['maxlines'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)
+		Tkinter.Label(self.serial_lframe,text="COM Port:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
+		self.entries['serial_port']=Tkinter.Entry(self.serial_lframe)
+		self.entries['serial_port'].grid(row=0,column=1, sticky='wens', padx=2, pady=2)		
+		Tkinter.Label(self.serial_lframe,text="Auto-Connect:", anchor='w').grid(row=0,column=2, sticky='wens', padx=2, pady=2)
+		Tkinter.Label(self.serial_lframe,text="Baud Rate:", anchor='w').grid(row=1,column=0, sticky='wens', padx=2, pady=2)
+		Tkinter.Label(self.serial_lframe,text="Byte Size:", anchor='w').grid(row=1,column=2, sticky='wens', padx=2, pady=2)
+		Tkinter.Label(self.serial_lframe,text="Parity:", anchor='w').grid(row=2,column=0, sticky='wens', padx=2, pady=2)
+		Tkinter.Label(self.serial_lframe,text="Stop Bits:", anchor='w').grid(row=2,column=2, sticky='wens', padx=2, pady=2)
+		self.entries['serial_autoconnect']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_autoconnect'].grid(row=0,column=3, sticky='wns', padx=2, pady=2)		
+		self.entries['serial_baudrate']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_baudrate'].grid(row=1,column=1, sticky='wns', padx=2, pady=2)
+		self.entries['serial_bytesize']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_bytesize'].grid(row=1,column=3, sticky='wns', padx=2, pady=2)
+		self.entries['serial_parity']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_parity'].grid(row=2,column=1, sticky='wns', padx=2, pady=2)
+		self.entries['serial_stopbits']=Tkinter.Entry(self.serial_lframe, width=4)
+		self.entries['serial_stopbits'].grid(row=2,column=3, sticky='wns', padx=2, pady=2)		
+		
+		
+		
 		for key in self.entries:
 			self.entries[key].insert(0,getattr(self.options,key))
 			self.entries[key]='readonly'
@@ -1135,16 +1162,6 @@ class OptionWindow:
 		else:
 			tkMessageBox.showerror("Incorrect Database Version","Database Version does not match application version.", parent=self.win)
 			return		
-	
-	def validate_integer(self,widget):
-		try:
-			int(newvalue)
-			return True
-		except:
-			self.entries[widget].delete(0,'end')
-			self.entries[widget].insert(0,getattr(self.options.widget))
-			return False
-
 		
 ###Widget Classes###
 	

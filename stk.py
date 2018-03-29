@@ -1029,7 +1029,7 @@ class DataNumerical:
 		c=self.db.cursor()
 		
 		#c.execute("""SELECT DISTINCT LabelName,LabelID from v_ReportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID""",(ReportConfigID)) 
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID""",(ReportConfigID,)) 
 		results=c.fetchall()
 		if not results:
 			self.data_tree.insert("",'end',text="No data found")

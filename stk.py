@@ -707,8 +707,8 @@ class STK:
 		c.execute("""CREATE TABLE "reportTypes" ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
 		c.execute("""CREATE TABLE "reports" ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
 		c.execute("""CREATE TABLE "sensors" ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
-		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportTypeID as ReportTypeID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
-		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
+		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportConfigID as ReportConfigID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
+		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.reportConfigID as ReportConfigID, reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
 		c.execute("""INSERT INTO config (DatabaseVersion, MachineName, CustomerName, CustomerLocation) VALUES (?,NULL,NULL,NULL)""",(self.options.dbversion,))
 		db.commit()
 		db.close()		
@@ -1021,12 +1021,15 @@ class DataNumerical:
 		
 		#get ReportTypeID from  tree
 		rtype=self.type_tree.selection()[0]
-		ReportTypeID=rtype.split("_")[1]
+		ReportConfigID=rtype.split("_")[1]
+		
+		starttime=datetime.now()
 		
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
+		#c.execute("""SELECT DISTINCT LabelName,LabelID from v_ReportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID""",(ReportConfigID)) 
 		results=c.fetchall()
 		if not results:
 			self.data_tree.insert("",'end',text="No data found")
@@ -1037,28 +1040,31 @@ class DataNumerical:
 		self.data_tree['show']='tree headings'
 		LabelNames,LabelIDs=zip(*results)
 		LabelCount=len(LabelNames)
-		self.data_tree["columns"]=LabelNames
+		self.data_tree["columns"]=LabelIDs
 		self.data_tree.column("#0",width=160)
 		self.data_tree.heading("#0",text="TIMESTAMP")
-		for LabelName in LabelNames:
+		for i,LabelName in enumerate(LabelNames):
 			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.25)
 			w=max(w,75)
-			self.data_tree.column(LabelName,width=w)
-			self.data_tree.heading(LabelName,text=LabelName)
+			self.data_tree.column(LabelIDs[i],width=w)
+			self.data_tree.heading(LabelIDs[i],text=LabelName)
 		
-		c.execute("""SELECT DISTINCT ReportID, timestamp from v_reportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC""",(LocationID,SensorID,ReportTypeID,startdate,enddate))
-		for ReportID,timestamp in c.fetchall():
-			c1=self.db.cursor()
-			c1.execute("""SELECT DISTINCT LabelName,Value,LabelID from v_reportData WHERE ReportID=? and SensorID=?""",(ReportID,SensorID))
-			values=[""] * LabelCount
-			for result in c1.fetchall():
-				i=LabelIDs.index(result[2])
-				values[i]=result[1]
-			c1.close()
-			self.data_tree.insert("",'end',text=timestamp,values=values)
+		c.execute("""SELECT ReportID, timestamp, LabelID, Value from v_reportData WHERE ReportConfigID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate,enddate))
+		for ReportID, timestamp, LabelID, Value in c.fetchall():
+			ReportRowName="Report_%d"%ReportID
+			if not self.data_tree.exists(ReportRowName):
+				values=[""] * LabelCount
+				self.data_tree.insert("",'end',ReportRowName,text=timestamp,values=values)
+			i=LabelIDs.index(LabelID)
+			values=list(self.data_tree.item(ReportRowName)['values'])
+			values[i]=Value
+			self.data_tree.item(ReportRowName,values=values)
+		
 		c.close()
 		self.db.close()
-		
+		endtime=datetime.now()
+		elapsed=endtime-starttime
+		print elapsed.total_seconds()
 		
 	def save_csv(self):
 		if not self.data_tree.get_children():
@@ -1247,16 +1253,17 @@ class ReportTypeTree(Treeview):
 		if call_widget.tag_has("Sensor",item):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
-			#ReportTypeID=1
-			c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
+			#c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
+			c.execute("""SELECT DISTINCT ReportConfigID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
 				self.generate_button.config(state='disabled')
 				c.close()
 				self.db.close()
 				return
-			for ReportTypeID,ReportTypeName in results:
-				self.insert("", 'end', "ReportType_%d"%ReportTypeID, text=ReportTypeName)
+			#for ReportTypeID,ReportTypeName in results:
+			for ReportConfigID,ReportTypeName in results:
+				self.insert("", 'end', "ReportConfig_%d"%ReportConfigID, text=ReportTypeName)
 			self.selection_set(self.get_children("")[0])
 		elif call_widget.tag_has("Location",item):
 			pass
@@ -1280,7 +1287,7 @@ class Options:
 		###LOAD IN DEFAULTS FIRST###
 		
 		##Hard Coded##
-		self.dbversion="1.0"
+		self.dbversion="1.1"
 		
 		##general##
 		self.dbfile=path+"/"+"stk.db"		
@@ -1326,7 +1333,6 @@ class Options:
 			prettyxml = minidom.parseString(etree.tostring(root)).toprettyxml()
 			with open(self.configfile, "w") as f:
 				f.write(prettyxml)	
-			print "saved all"
 	
 		else:
 			if not os.path.isfile(self.configfile):
@@ -1336,7 +1342,6 @@ class Options:
 			if options.find(option) is not None:
 				options.find(option).text=str(getattr(self,option))
 				tree.write(self.configfile)			
-				print "saved %s"%option
 			else:
 				return
 			

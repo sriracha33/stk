@@ -414,9 +414,7 @@ class STK:
 	
 	#function to process a line of text from process_serial or process_logfile
 	#creates and manages reports (self.report) and when a report is complete runs process_report
-	def process_line(self,line,quick=False):
-		if not quick:
-			self.display_line(line)
+	def process_line(self,line):
 		
 		#report is empty.  means a new report is ready to begin.  Checks for line 1 of report header
 		if not 'name' in self.report:
@@ -444,23 +442,7 @@ class STK:
 		
 		#means end of report.  Process previous report and clear out data
 		elif re.search(r"END OF REPORT",line):
-			error=False
-			for sensor in self.report['data']:
-				#print sensor['sensor'],
-				test = sensor['sensor']
-				#print len(self.report['data'][-1]['labels'])-len(self.report['data'][-1]['values'])
-				for i,label in enumerate(sensor['labels']):
-					try:
-						#print "%s: %g" % (label,float(sensor['values'][i]))
-						test = "%s: %g" % (label,float(sensor['values'][i]))
-					except IndexError:
-						error=True
-						self.log_error(" Index Error: %s. Labels: %d, Values %d" % (label,len(sensor['labels']),len(sensor['values'])))
-				if error:
-					self.log_error("Index Error in report %s %s. Report discarded." % (self.report['name'],self.report['location']))
-					self.report={}
-					return
-			self.process_report()
+			self.process_serial_report()
 			self.report={}
 			self.root.update()
 		
@@ -515,66 +497,111 @@ class STK:
 		#not needed, but this SHOULD only be blank lines.
 		else:
 			pass
+	
+	
+	def process_serial_report(self):
+		"""Function to break up a full serial report into individual sensor reports and process those."""
+		if self.learning:
+			self.learn_report()
+		else:
+			while self.report['data']:
+				report=Report(self.report)
+				self.process_report(report)
+				self.report['data'].pop(0)
 
-	#function to process a complete report. Included error checking against database
-	#can function in learning==True which will update Report Type, Locations, Sensors and Labels but not reports, report data and grade.
-	#or can function in learning==False where is logs reports, report data and grades if configuration exists.  This should help catch malformed reports.
-	def process_report(self):
+	def process_report(self,report):
+		"""Function to process an individual sensor report including error checking. """
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		
+		#check if number of values=number of labels
+		if len(report.Values)!=len(report.LabelNames):
+			print "Values/Label count do not match"
+			#add error logging here
+			return
+			
+		#check if report exists in database
+		c.execute("""SELECT ReportConfigID from v_structure WHERE LocationName=? and SensorName=? and ReportTypeName=?""",(report.LocationName,report.SensorName,report.ReportTypeName))
+		result=c.fetchone()
+		if result is None:
+			print "report config not found"
+			#add error logging
+			return
+		else:
+			ReportConfigID=result[0]
+			#print ReportConfigID,
+		
+		#check if labels are configured in database and they match the current report labels
+		c.execute("""SELECT LabelID,LabelName from v_structure WHERE ReportConfigID=?""",(ReportConfigID,))
+		labels=c.fetchall()
+		if len(labels)==0:
+			print "no labels"
+			#add error logging
+			return				
+		if sorted(report.LabelNames)!=sorted([x[1] for x in labels]):
+			print "labels do not match"
+			#add error logging
+			return
+		
+		#check if grade exists and has correct name
+		c.execute('''SELECT GradeID,GradeName FROM grades WHERE GradeCode = ?''',(report.GradeCode,))
+		result=c.fetchone()
+		if result:
+			GradeID=result[0]
+			if result[1]!=report.GradeName:
+				c.execute('''UPDATE grades SET GradeName=? WHERE GradeID = ?''',(report.GradeName,GradeID))
+				self.log_process("Updated grade %s name from %s to %s"%(report.GradeCode,result[1],report.GradeName))
+		else:
+			c.execute('''INSERT INTO grades (GradeID, GradeCode, GradeName) VALUES (NULL,?,?)''', (report.GradeCode,report.GradeName))
+			GradeID=c.lastrowid
+			self.log_process("Added missing grade %s %s"%(report.GradeCode,report.GradeName))		
+		
+		c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,?)''', (report.Timestamp,ReportConfigID,GradeID))
+		ReportID=c.lastrowid
+		
+		for LabelID,LabelName in labels:
+			i=report.LabelNames.index(LabelName)
+			c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,report.Values[i]))
+		self.db.commit()
+		self.db.close()			
+		self.log_process("%s: %s, %s, %s, %s" % (report.ReportTypeName,report.LocationName,report.SensorName,report.Timestamp.strftime('%Y-%m-%d %H:%M'),report.GradeCode))
+		
+	def learn_report(self):
+		"""Function to process an individual sensor report to modify the configuration in the database."""
+		#need to update this to take in a Report class as an argument
+		
+		self.db = sqlite3.connect(self.options.dbfile)
+		c=self.db.cursor()
 		#check if machinename is set. Offer to set it if not. Only for learning.
-		if self.learning:
-			c.execute('''SELECT MachineName FROM config WHERE rowid = 1''')
-			result=c.fetchone()
-			if result is not None:
-				name=result[0]
-				if name is None:
-					response=tkMessageBox.askyesno("Add Machine Name?","Machine name has not been set.\nWould you like to update name to:\n%s?"%self.report['machine'])
-					if response:
-						c.execute('''UPDATE config SET MachineName=? WHERE rowid = 1''',(self.report['machine'],))
-						self.db.commit()
+		c.execute('''SELECT MachineName FROM config WHERE rowid = 1''')
+		result=c.fetchone()
+		if result is not None:
+			name=result[0]
+			if name is None:
+				response=tkMessageBox.askyesno("Add Machine Name?","Machine name has not been set.\nWould you like to update name to:\n%s?"%self.report['machine'])
+				if response:
+					c.execute('''UPDATE config SET MachineName=? WHERE rowid = 1''',(self.report['machine'],))
+					self.db.commit()
 		
 		#check/add reportType exists
 		c.execute('''SELECT reportTypeID FROM reportTypes WHERE ReportTypeName = ?''',(self.report['name'],))
 		result=c.fetchone()
 		if result:
 			ReportTypeID=result[0]
-		elif self.learning:
+		else:
 			c.execute('''INSERT INTO reportTypes (ReportTypeID, ReportTypeName) VALUES (NULL,?)''', (self.report['name'],))
 			ReportTypeID=c.lastrowid
 			self.log_process("New report type %s added to database"%self.report['name'])
-		elif not result:
-			self.log_error("Report Type Missing from Database: %s" % self.report['name'])
-			return
 		
 		#check/add location exists
 		c.execute('''SELECT LocationID FROM locations WHERE LocationName = ?''',(self.report['location'],))
 		result=c.fetchone()
 		if result:
 			LocationID=result[0]
-		elif self.learning:
+		else:
 			c.execute('''INSERT INTO locations (LocationID, LocationName) VALUES (NULL,?)''', (self.report['location'],))
 			LocationID=c.lastrowid
 			self.log_process("New location %s added to database"%self.report['location'])
-		else:
-			self.log_error("Location Missing from Database: %s" % self.report['location'])
-			return
-		
-		#check if grade exists.  This is always "learning", except when "learning"... (doesn't add grades when configuring)
-		if not self.learning:
-			c.execute('''SELECT GradeID,GradeName FROM grades WHERE GradeCode = ?''',(self.report['gradecode'],))
-			result=c.fetchone()
-			if result:
-				GradeID=result[0]
-				if result[1]!=self.report['gradename']:
-					c.execute('''UPDATE grades SET GradeName=? WHERE GradeID = ?''',(self.report['gradename'],GradeID))
-					self.log_process("Updated grade %s name from %s to %s"%(self.report['gradecode'],result[1],self.report['gradename']))
-			else:
-				c.execute('''INSERT INTO grades (GradeID, GradeCode, GradeName) VALUES (NULL,?,?)''', (self.report['gradecode'],self.report['gradename']))
-				GradeID=c.lastrowid
-				self.log_process("Added missing grade %s %s"%(self.report['gradecode'],self.report['gradename']))
-			self.db.commit()
 		
 		#check/add sensor(s) and label(s) exists
 		for sensor in self.report['data']:
@@ -584,61 +611,35 @@ class STK:
 			result=c.fetchone()
 			if result:
 				SensorID = result[0]
-			elif self.learning:
+			else:
 				c.execute('''INSERT INTO sensors (SensorID,SensorName,LocationID) VALUES (NULL,?,?)''', (sensor['sensor'],LocationID))
 				SensorID=c.lastrowid
 				self.log_process("New sensor %s at location %s added to database"%(sensor['sensor'],self.report['location']))
-			else:
-				self.log_error("Sensor %s missing from Database at location %s" % (sensor['sensor'],self.report['location']))
-				continue
 			
 			#check/add reportConfig exists
 			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
 			result=c.fetchone()
 			if result:
 				ReportConfigID=result[0]
-			elif self.learning:
+			else:
 				c.execute('''INSERT INTO reportConfig (ReportConfigID, SensorID, ReportTypeID, ReportSource, Active, TriggerTagID) VALUES (NULL,?,?,0,1,NULL)''', (SensorID,ReportTypeID))
 				ReportConfigID=c.lastrowid
 				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
-			elif not result:
-				self.log_error("Report %s %s %s missing from Database" % (sensor['sensor'],self.report['location'],self.report['name']))
-				continue	
-			
-			#insert report here.  Do not do if learning
-			if not self.learning:
-				c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,?)''', (self.report['timestamp'],ReportConfigID,GradeID))
-				ReportID=c.lastrowid
-				self.db.commit()
 				
-			valid=True
-			for i,label in enumerate(sensor['labels']):
+			for label in sensor['labels']:
 				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(label,ReportConfigID))
 				result=c.fetchone()
 				if result:
 					LabelID = result[0]
-				elif self.learning:
+				else:
 					c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL)''', (label,ReportConfigID))
 					LabelID=c.lastrowid
 					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
-				else:
-					#self.db.commit()
-					self.log_error("Label %s missing from Database in location %s, sensor %s" % (label,self.report['location'],sensor['sensor']))
-					valid=False
-					continue
-				if not self.learning:
-					c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,sensor['values'][i]))
-			if valid:
-				self.db.commit()
-				self.log_process("%s: %s, %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],sensor['sensor'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
-			else:
-				self.db.rollback()
-				c.execute("""DELETE FROM reports WHERE ReportID = ?""",(ReportID,))
-				c.execute("""UPDATE SQLITE_SEQUENCE SET seq = ? WHERE name = 'reports'""",(ReportID-1,))
-				self.db.commit()
-				continue
-		#close every time. Most of the time we process multple reports at a time.
 			
+			self.log_process("%s: %s, %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],sensor['sensor'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
+			
+		#close every time. Most of the time we process multple reports at a time.
+		self.db.commit()
 		self.db.close()
 		
 	def init_database(self):
@@ -1267,7 +1268,6 @@ class ReportTypeTree(Treeview):
 		if call_widget.tag_has("Sensor",item):
 			SensorID=item.split("_")[1]
 			LocationID=call_widget.parent(item).split("_")[1]
-			#c.execute("""SELECT DISTINCT ReportTypeID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
 			c.execute("""SELECT DISTINCT ReportConfigID,ReportTypeName FROM v_structure WHERE LocationID=? and SensorID=? ORDER BY ReportTypeID""",(LocationID,SensorID))
 			results=c.fetchall()
 			if not results:
@@ -1358,6 +1358,20 @@ class Options:
 				tree.write(self.configfile)			
 			else:
 				return
+			
+class Report:
+	
+	def __init__(self,report):
+		self.MachineName=report['machine']
+		self.ReportTypeName=report['name']
+		self.LocationName=report['location']
+		self.Timestamp=report['timestamp']
+		self.GradeCode=report['gradecode']
+		self.GradeName=report['gradename']
+		self.SensorName=report['data'][0]['sensor']
+		self.LabelNames=report['data'][0]['labels']
+		self.Values=report['data'][0]['values']
+		
 			
 if __name__ == "__main__":
 	main()

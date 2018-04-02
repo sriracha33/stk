@@ -859,6 +859,13 @@ class DataNumerical:
 		self.an_win.geometry("800x600")
 		self.an_win.minsize(800,600)
 		
+		#create status bar at the bottom of the window
+		statusbar=Tkinter.Frame(self.an_win,borderwidth=1, relief='sunken')
+		statusbar.pack(side='bottom', fill='x')
+		self.statustext = Tkinter.StringVar()
+		#self.statustext.set('Status');
+		Tkinter.Label(statusbar, textvariable=self.statustext, anchor='w').pack(side='left')		
+		
 		#split window into two panes
 		paned=Tkinter.PanedWindow(self.an_win,orient='horizontal')
 		paned.pack(fill='both',expand=1)		
@@ -1023,21 +1030,16 @@ class DataNumerical:
 		rtype=self.type_tree.selection()[0]
 		ReportConfigID=rtype.split("_")[1]
 		
+		self.csv_button.config(state='disabled')
+		
 		starttime=datetime.now()
 		
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		
-		#c.execute("""SELECT DISTINCT LabelName,LabelID from v_ReportData WHERE LocationID=? and SensorID=? and ReportTypeID=? and timestamp>=? and timestamp<=? ORDER BY reportDataID""",(LocationID,SensorID,ReportTypeID,startdate,enddate)) 
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID""",(ReportConfigID,)) 
 		results=c.fetchall()
-		if not results:
-			self.data_tree.insert("",'end',text="No data found")
-			self.data_tree['show']='tree'
-			self.csv_button.config(state='disabled')
-			return
-		self.csv_button.config(state='active')
-		self.data_tree['show']='tree headings'
+		
 		LabelNames,LabelIDs=zip(*results)
 		LabelCount=len(LabelNames)
 		self.data_tree["columns"]=LabelIDs
@@ -1058,13 +1060,25 @@ class DataNumerical:
 			i=LabelIDs.index(LabelID)
 			values=list(self.data_tree.item(ReportRowName)['values'])
 			values[i]=Value
-			self.data_tree.item(ReportRowName,values=values)
+			self.data_tree.item(ReportRowName,values=values)		
 		
 		c.close()
 		self.db.close()
+		
+		records = len(self.data_tree.get_children())
+		
+		if records==0:
+			self.data_tree.insert("",'end',text="No data found")
+			self.data_tree['show']='tree'
+			self.csv_button.config(state='disabled')
+		else:
+			self.csv_button.config(state='active')
+			self.data_tree['show']='tree headings'
+			
 		endtime=datetime.now()
 		elapsed=endtime-starttime
-		print elapsed.total_seconds()
+		status="%d records found in %s seconds." % (records,elapsed.total_seconds())
+		self.statustext.set(status)
 		
 	def save_csv(self):
 		if not self.data_tree.get_children():

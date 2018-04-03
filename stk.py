@@ -693,7 +693,7 @@ class STK:
 		c.execute("""CREATE TABLE "reportConfig" ( `ReportConfigID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorID` INTEGER NOT NULL, `ReportTypeID` INTEGER, `ReportSource` INTEGER , Active INTEGER DEFAULT 1, TriggerTagID INTEGER DEFAULT NULL)""")
 		c.execute("""CREATE TABLE "reportData" ( `ReportDataID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportID` INTEGER NOT NULL, `LabelID` INTEGER NOT NULL, `Value` NUMERIC NOT NULL )""")
 		c.execute("""CREATE TABLE "reportTypes" ( `ReportTypeID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `ReportTypeName` TEXT NOT NULL )""")
-		c.execute("""CREATE TABLE "reports" ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL, `GradeID` INTEGER NOT NULL )""")
+		c.execute("""CREATE TABLE "reports" ( `ReportID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `Timestamp` TEXT NOT NULL, `ReportConfigID` INTEGER NOT NULL, `GradeID` INTEGER DEFAULT NULL )""")
 		c.execute("""CREATE TABLE "sensors" ( `SensorID` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE, `SensorName` TEXT NOT NULL, `LocationID` INTEGER NOT NULL )""")
 		c.execute("""CREATE VIEW v_reportData AS SELECT reports.ReportID as ReportID, timestamp, reportConfig.ReportConfigID as ReportConfigID, ReportTypeName, locations.LocationID as LocationID, LocationName, reports.GradeID as GradeID, GradeCode, GradeName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, labels.LabelID as LabelID, labels.LabelName as LabelName, Value, reportData.ReportDataID as ReportDataID FROM reports INNER JOIN reportConfig ON reportConfig.ReportConfigID = reports.ReportConfigID INNER JOIN grades ON grades.GradeID = reports.GradeID INNER JOIN reportData ON reportData.ReportID = reports.reportID INNER JOIN labels ON labels.LabelID = reportData.LabelID INNER JOIN sensors ON sensors.SensorID = reportConfig.SensorID INNER JOIN locations ON locations.LocationID = sensors.LocationID INNER JOIN reportTypes ON reportTypes.ReportTypeID = reportConfig.ReportTypeID""")
 		c.execute("""CREATE VIEW v_structure AS SELECT reportConfig.reportConfigID as ReportConfigID, reportConfig.ReportSource as ReportSource, reportConfig.Active AS Active, reportConfig.TriggerTagID as TriggerTagID, locations.LocationID as LocationID, locations.LocationName as LocationName, sensors.SensorID as SensorID, sensors.SensorName as SensorName, reportTypes.ReportTypeID as ReportTypeID, reportTypes.ReportTypeName as ReportTypeName, labels.LabelID as LabelID, labels.LabelName as LabelName, labels.TagID as TagID FROM reportConfig INNER JOIN sensors on sensors.SensorID = reportConfig.SensorID INNER JOIN locations on locations.LocationID = sensors.LocationID INNER JOIN reportTypes on reportTypes.ReportTypeID = reportConfig.ReportTypeID INNER JOIN labels on labels.ReportConfigID = reportConfig.ReportConfigID;""")
@@ -1026,29 +1026,48 @@ class DataNumerical:
 		c=self.db.cursor()
 		
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID""",(ReportConfigID,)) 
-		results=c.fetchall()
+		results=c.fetchall()		
 		
 		LabelNames,LabelIDs=zip(*results)
 		LabelCount=len(LabelNames)
+		LabelNames=list(LabelNames)
+		LabelIDs=list(LabelIDs)
+	
+		
+		c.execute("""SELECT ReportSource from v_structure WHERE ReportConfigID=?""",(ReportConfigID,)) 
+		source=c.fetchone()[0]
+		
+		if source==0:
+			#self.data_tree.column("#0",width=100)
+			#self.data_tree.heading("#0",text="Grade Code")
+			LabelNames.insert(0,'GRADE CODE')
+			LabelCount=len(LabelNames)
+			LabelIDs.insert(0,0)
+
 		self.data_tree["columns"]=LabelIDs
 		self.data_tree.column("#0",width=160)
-		self.data_tree.heading("#0",text="TIMESTAMP")
+		self.data_tree.heading("#0",text="TIMESTAMP")				
+		
+		
 		for i,LabelName in enumerate(LabelNames):
 			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.25)
 			w=max(w,75)
 			self.data_tree.column(LabelIDs[i],width=w)
 			self.data_tree.heading(LabelIDs[i],text=LabelName)
 		
-		c.execute("""SELECT ReportID, timestamp, LabelID, Value from v_reportData WHERE ReportConfigID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate,enddate))
-		for ReportID, timestamp, LabelID, Value in c.fetchall():
-			ReportRowName="Report_%d"%ReportID
-			if not self.data_tree.exists(ReportRowName):
+		lastReportID=-1
+		c.execute("""SELECT ReportID, timestamp, LabelID, Value, GradeCode from v_reportData WHERE ReportConfigID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate,enddate))
+		for ReportID, timestamp, LabelID, Value, GradeCode in c.fetchall():
+			if ReportID!=lastReportID:
+				if lastReportID!=-1:
+					self.data_tree.insert("",'end',text=timestamp,values=values)			
 				values=[""] * LabelCount
-				self.data_tree.insert("",'end',ReportRowName,text=timestamp,values=values)
+				if source==0:
+					values[0]=GradeCode				
 			i=LabelIDs.index(LabelID)
-			values=list(self.data_tree.item(ReportRowName)['values'])
 			values[i]=Value
-			self.data_tree.item(ReportRowName,values=values)		
+			lastReportID=ReportID
+		self.data_tree.insert("",'end',text=timestamp,values=values)
 		
 		c.close()
 		self.db.close()

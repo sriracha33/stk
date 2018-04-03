@@ -501,13 +501,14 @@ class STK:
 	
 	def process_serial_report(self):
 		"""Function to break up a full serial report into individual sensor reports and process those."""
-		if self.learning:
-			self.learn_report()
-		else:
-			while self.report['data']:
-				report=Report(self.report)
+		while self.report['data']:
+			report=Report(self.report)
+			self.report['data'].pop(0)
+			if self.learning:
+				self.learn_report(report)
+			else:
 				self.process_report(report)
-				self.report['data'].pop(0)
+				
 
 	def process_report(self,report):
 		"""Function to process an individual sensor report including error checking. """
@@ -516,7 +517,8 @@ class STK:
 		
 		#check if number of values=number of labels
 		if len(report.Values)!=len(report.LabelNames):
-			print "Values/Label count do not match"
+			#self.log_process("Label and Value count do not match. Labels=%d, Values=%d"%(len(report.LabelNames),len(report.Values)))
+			print "Label/Error count mismatch"
 			#add error logging here
 			return
 			
@@ -566,77 +568,62 @@ class STK:
 		self.db.close()			
 		self.log_process("%s: %s, %s, %s, %s" % (report.ReportTypeName,report.LocationName,report.SensorName,report.Timestamp.strftime('%Y-%m-%d %H:%M'),report.GradeCode))
 		
-	def learn_report(self):
+	def learn_report(self,report):
 		"""Function to process an individual sensor report to modify the configuration in the database."""
 		#need to update this to take in a Report class as an argument
 		
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
-		#check if machinename is set. Offer to set it if not. Only for learning.
-		c.execute('''SELECT MachineName FROM config WHERE rowid = 1''')
-		result=c.fetchone()
-		if result is not None:
-			name=result[0]
-			if name is None:
-				response=tkMessageBox.askyesno("Add Machine Name?","Machine name has not been set.\nWould you like to update name to:\n%s?"%self.report['machine'])
-				if response:
-					c.execute('''UPDATE config SET MachineName=? WHERE rowid = 1''',(self.report['machine'],))
-					self.db.commit()
 		
 		#check/add reportType exists
-		c.execute('''SELECT reportTypeID FROM reportTypes WHERE ReportTypeName = ?''',(self.report['name'],))
+		c.execute('''SELECT reportTypeID FROM reportTypes WHERE ReportTypeName = ?''',(report.ReportTypeName,))
 		result=c.fetchone()
 		if result:
 			ReportTypeID=result[0]
 		else:
-			c.execute('''INSERT INTO reportTypes (ReportTypeID, ReportTypeName) VALUES (NULL,?)''', (self.report['name'],))
+			c.execute('''INSERT INTO reportTypes (ReportTypeID, ReportTypeName) VALUES (NULL,?)''', (report.ReportTypeName,))
 			ReportTypeID=c.lastrowid
-			self.log_process("New report type %s added to database"%self.report['name'])
+			self.log_process("New report type %s added to database"%report.ReportTypeName)
 		
 		#check/add location exists
-		c.execute('''SELECT LocationID FROM locations WHERE LocationName = ?''',(self.report['location'],))
+		c.execute('''SELECT LocationID FROM locations WHERE LocationName = ?''',(report.LocationName,))
 		result=c.fetchone()
 		if result:
 			LocationID=result[0]
 		else:
-			c.execute('''INSERT INTO locations (LocationID, LocationName) VALUES (NULL,?)''', (self.report['location'],))
+			c.execute('''INSERT INTO locations (LocationID, LocationName) VALUES (NULL,?)''', (report.LocationName,))
 			LocationID=c.lastrowid
-			self.log_process("New location %s added to database"%self.report['location'])
+			self.log_process("New location %s added to database"%report.LocationName)
+			
+		#check if sensor exists
+		c.execute('''SELECT SensorID FROM sensors WHERE SensorName = ? and LocationID = ?''',(report.SensorName,LocationID))
+		result=c.fetchone()
+		if result:
+			SensorID = result[0]
+		else:
+			c.execute('''INSERT INTO sensors (SensorID,SensorName,LocationID) VALUES (NULL,?,?)''', (report.SensorName,LocationID))
+			SensorID=c.lastrowid
+			self.log_process("New sensor %s at location %s added to database"%(report.SensorName,report.LocationName))
 		
-		#check/add sensor(s) and label(s) exists
-		for sensor in self.report['data']:
+		#check/add reportConfig exists
+		c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
+		result=c.fetchone()
+		if result:
+			ReportConfigID=result[0]
+		else:
+			c.execute('''INSERT INTO reportConfig (ReportConfigID, SensorID, ReportTypeID, ReportSource, Active, TriggerTagID) VALUES (NULL,?,?,0,1,NULL)''', (SensorID,ReportTypeID))
+			ReportConfigID=c.lastrowid
+			self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(report.SensorName,report.LocationName,report.ReportTypeName))
 			
-			#check if sensor exists
-			c.execute('''SELECT SensorID FROM sensors WHERE SensorName = ? and LocationID = ?''',(sensor['sensor'],LocationID))
+		for LabelName in report.LabelNames:
+			c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(LabelName,ReportConfigID))
 			result=c.fetchone()
 			if result:
-				SensorID = result[0]
+				LabelID = result[0]
 			else:
-				c.execute('''INSERT INTO sensors (SensorID,SensorName,LocationID) VALUES (NULL,?,?)''', (sensor['sensor'],LocationID))
-				SensorID=c.lastrowid
-				self.log_process("New sensor %s at location %s added to database"%(sensor['sensor'],self.report['location']))
-			
-			#check/add reportConfig exists
-			c.execute('''SELECT reportConfigID FROM reportConfig WHERE ReportTypeID = ? AND SensorID=? and ReportSource=?''',(ReportTypeID,SensorID,0))
-			result=c.fetchone()
-			if result:
-				ReportConfigID=result[0]
-			else:
-				c.execute('''INSERT INTO reportConfig (ReportConfigID, SensorID, ReportTypeID, ReportSource, Active, TriggerTagID) VALUES (NULL,?,?,0,1,NULL)''', (SensorID,ReportTypeID))
-				ReportConfigID=c.lastrowid
-				self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(sensor['sensor'],self.report['location'],self.report['name']))
-				
-			for label in sensor['labels']:
-				c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(label,ReportConfigID))
-				result=c.fetchone()
-				if result:
-					LabelID = result[0]
-				else:
-					c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL)''', (label,ReportConfigID))
-					LabelID=c.lastrowid
-					self.log_process("New label %s for sensor %s at location %s added to database"%(label,sensor['sensor'],self.report['location']))
-			
-			self.log_process("%s: %s, %s, %s, %s, %s" % (self.report['name'],self.report['machine'],self.report['location'],sensor['sensor'],self.report['timestamp'].strftime('%Y-%m-%d %H:%M'),self.report['gradecode']))					
+				c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL)''', (LabelName,ReportConfigID))
+				LabelID=c.lastrowid
+				self.log_process("New label %s for sensor %s at location %s added to database"%(LabelName,report.SensorName,report.LocationName))
 			
 		#close every time. Most of the time we process multple reports at a time.
 		self.db.commit()
@@ -1362,7 +1349,6 @@ class Options:
 class Report:
 	
 	def __init__(self,report):
-		self.MachineName=report['machine']
 		self.ReportTypeName=report['name']
 		self.LocationName=report['location']
 		self.Timestamp=report['timestamp']

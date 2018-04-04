@@ -7,6 +7,14 @@ from tkFileDialog import *
 from datetime import datetime,date,timedelta
 import xml.etree.ElementTree as etree
 from xml.dom import minidom
+
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use("TkAgg")
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+from matplotlib.figure import Figure
+import matplotlib.dates as mdates
+
 import tkMessageBox
 import time
 import re
@@ -113,6 +121,7 @@ class STK:
 		analyzemenu = Tkinter.Menu(menubar, tearoff=0)
 		menubar.add_cascade(label="Analyze", menu=analyzemenu)
 		analyzemenu.add_command(label="Data Numerical", command=self.analyze_numerical)
+		analyzemenu.add_command(label="Data Graphical", command=self.analyze_graphical)
 		
 		#Setup menu
 		setupmenu = Tkinter.Menu(menubar, tearoff=0)
@@ -319,6 +328,17 @@ class STK:
 		self.an_win = Tkinter.Toplevel()
 		self.an_win.tk.call('wm', 'iconphoto', self.an_win._w, self.icon)
 		DataNumerical(self.an_win,self.options)
+
+	def analyze_graphical(self):
+		"""Function to load the Analyze Graphical window"""
+		if hasattr(self, 'ag_win') and self.ag_win.winfo_exists():
+			self.ag_win.deiconify()
+			self.ag_win.focus_force()
+			self.ag_win.lift()
+			return
+		self.ag_win = Tkinter.Toplevel()
+		self.ag_win.tk.call('wm', 'iconphoto', self.ag_win._w, self.icon)
+		DataGraphical(self.ag_win,self.options)
 		
 	#function to open/close log file. One function to make tk binding easier
 	def open_logfile(self):
@@ -1104,6 +1124,216 @@ class DataNumerical:
 				line=','.join(timestamp+row)
 				writer.writerow(timestamp+row)
 
+class DataGraphical:
+	def __init__(self,parent,options):
+		self.options=options
+		self.win=parent
+	
+		self.win.geometry("+100+100")
+		self.win.geometry("800x600")
+		self.win.minsize(800,600)
+		
+		#create status bar at the bottom of the window
+		statusbar=Tkinter.Frame(self.win,borderwidth=1, relief='sunken')
+		statusbar.pack(side='bottom', fill='x')
+		self.statustext = Tkinter.StringVar()
+		#self.statustext.set('Status');
+		Tkinter.Label(statusbar, textvariable=self.statustext, anchor='w').pack(side='left')		
+		
+		#split window into two panes
+		paned=Tkinter.PanedWindow(self.win,orient='horizontal')
+		paned.pack(fill='both',expand=1)		
+		
+		report_frame=Tkinter.Frame(paned)
+		paned.add(report_frame, minsize=250, padx=2)
+		report_frame.pack_propagate(0)
+		data_frame=Tkinter.Frame(paned)
+		paned.add(data_frame, padx=2)
+		
+		#data frame
+		pass
+		
+		#report frame
+		generate_button=Tkinter.Button(report_frame, text="Generate Report", command=self.generate_graph,state='disabled')#, relief="ridge"
+		generate_button.pack(side="bottom", fill="x", padx=1,pady=2)
+		
+		##variable##
+		self.filter_select = Tkinter.IntVar()
+		self.filter_start = Tkinter.StringVar()
+		self.filter_end = Tkinter.StringVar()
+		
+		#filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
+		ff_lframe=Tkinter.LabelFrame(report_frame,text="Time Filter")
+		ff_lframe.pack(side='bottom', fill='x')
+		filter_frame=Tkinter.Frame(ff_lframe,width=225,height=200)
+		filter_frame.pack(side='bottom', fill='both', padx=2, pady=2)
+		filter_frame.pack_propagate(0)
+		#move code starting here to new class
+		filter_frame.columnconfigure(0, weight = 1)
+		filter_frame.columnconfigure(1, weight = 1)
+		Tkinter.Radiobutton(filter_frame, text="Prior Day", variable=self.filter_select, value=0,command=self.change_filter).grid(row=1,column=0,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Prior Week", variable=self.filter_select, value=1,command=self.change_filter).grid(row=1,column=1,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Prior Month", variable=self.filter_select, value=2,command=self.change_filter).grid(row=2,column=0,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Prior Year", variable=self.filter_select, value=3,command=self.change_filter).grid(row=2,column=1,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="All Data", variable=self.filter_select, value=4,command=self.change_filter).grid(row=3,column=0,sticky='w')
+		Tkinter.Radiobutton(filter_frame, text="Custom Time", variable=self.filter_select, value=5,command=self.change_filter).grid(row=3,column=1,sticky='w')
+		self.filter_select.set(0)
+		self.filter_start.set((datetime.now()-timedelta(days=7)).strftime("%Y-%m-%d %H:%M"))
+		self.filter_end.set(datetime.now().strftime("%Y-%m-%d %H:%M"))
+		Tkinter.Label(filter_frame, text="Start").grid(row=4,column=0)
+		Tkinter.Label(filter_frame, text="End").grid(row=4,column=1)
+		start_entry=Tkinter.Entry(filter_frame, textvariable=self.filter_start,bg="white",state='disabled',justify='center')
+		start_entry.grid(row=5,column=0)
+		end_entry=Tkinter.Entry(filter_frame, textvariable=self.filter_end,bg="white",state='disabled',justify='center')
+		end_entry.grid(row=5,column=1)
+		#move code ending here to new class
+		
+		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
+		tt_lframe.pack(side='bottom', fill='x')		
+		tt_vscroll = Tkinter.Scrollbar(tt_lframe)
+		tt_vscroll.pack(side='right', fill='y', padx=(0,2), pady=(0,2))			
+		type_tree=ReportTypeTree(tt_lframe,self.options)
+		tt_lframe.pack(side='bottom', fill='both')		
+		type_tree.config(height=5)
+		type_tree.column("#0",stretch=True)
+		type_tree.pack(side='bottom',fill='x',anchor='s', padx=(2,0), pady=(0,2))
+		tt_vscroll.config(command=type_tree.yview)
+		type_tree.configure(yscrollcommand=tt_vscroll.set)		
+		
+		rt_lframe=Tkinter.LabelFrame(report_frame,text="Machine Structure")
+		rt_lframe.pack(side='bottom', fill='both', expand=True)	
+		rt_vscroll = Tkinter.Scrollbar(rt_lframe)
+		rt_vscroll.pack(side='right', fill='y', padx=(0,2), pady=(0,2))				
+		report_tree=StructureTree(rt_lframe,self.options)
+		report_tree.column("#0",stretch=True)
+		report_tree.pack(side='left',fill='both',expand=True, anchor='s', padx=(2,0), pady=(0,2))
+		rt_vscroll.config(command=report_tree.yview)
+		report_tree.configure(yscrollcommand=rt_vscroll.set)		
+		
+		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
+		report_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")
+
+		self.report_tree=report_tree
+		self.type_tree=type_tree
+		self.generate_button=generate_button
+		self.start_entry=start_entry
+		self.end_entry=end_entry
+		self.data_frame=data_frame
+		self.graph=None
+
+
+	#function called when radio buttons change.  Will make custom dates disabled/normal
+	def change_filter(self):
+		if self.filter_select.get()==5:
+			self.start_entry.config(state='normal')
+			self.end_entry.config(state='normal')
+		else:
+			self.start_entry.config(state='disabled')
+			self.end_entry.config(state='disabled')
+
+	def generate_button_state(self):
+		if self.type_tree.get_children(""):
+			self.generate_button['state']='active'
+		else:
+			self.generate_button['state']='disabled'
+		
+	
+	def generate_graph(self):
+		
+		#check what filter is selected and calculate end date and duration to subtract in sql statement
+		filter=self.filter_select.get()
+		if filter==0:
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=1)
+		elif filter==1:
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=7)
+		elif filter==2:
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=30)
+		elif filter==3:
+			enddate=datetime.now()
+			startdate=enddate-timedelta(days=365)
+		elif filter==4:
+			enddate=datetime.now()
+			startdate=datetime.strptime("1970-01-01 00:00","%Y-%m-%d %H:%M")
+		elif filter==5:
+			try:
+				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d %H:%M")
+			except ValueError:
+				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
+				return
+			try:
+				startdate=datetime.strptime(self.filter_start.get().strip(),"%Y-%m-%d %H:%M")
+			except ValueError:
+				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
+				return
+			if enddate<=startdate:
+				tkMessageBox.showerror("Invalid Dates","End date must be after start date.", parent=self.an_win)
+				return
+	
+		#set starttime.seconds to zero just to avoid confusion
+		startdate=startdate.replace(second=0)
+	
+		#get selected SensorID from tree id
+		sensor=self.report_tree.selection()[0]
+		SensorID=sensor.split("_")[1]
+	
+		#get selected sensor LocationID from tree id of parent
+		LocationID=self.report_tree.parent(sensor).split("_")[1]
+	
+		#get ReportTypeID from  tree
+		rtype=self.type_tree.selection()[0]
+		ReportConfigID=rtype.split("_")[1]
+	
+		starttime=datetime.now()
+	
+		self.db = sqlite3.connect(self.options.dbfile)
+		c=self.db.cursor()
+	
+		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID LIMIT 4""",(ReportConfigID,)) 
+		LabelName,LabelID=c.fetchone()
+		LabelName,LabelID=c.fetchone()
+		LabelName,LabelID=c.fetchone()
+
+		c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
+		results=c.fetchall()
+		x,y=zip(*results)
+		x=list(x)
+		x=map(lambda j: datetime.strptime(j,"%Y-%m-%d %H:%M:%S"),x)
+		#x=mdates.date2num(x)
+		y=list(y)
+		c.close()
+		self.db.close()
+	
+		endtime=datetime.now()
+		elapsed=endtime-starttime
+		#status="%d records found in %s seconds." % (records,elapsed.total_seconds())
+		#self.statustext.set(status)		
+		################################
+		
+		if self.graph is None:
+			f = Figure(figsize=(5,5), dpi=100)
+			self.graph=f.add_subplot(111)
+			self.canvas = FigureCanvasTkAgg(f, self.data_frame)
+			self.canvas.get_tk_widget().pack(side='bottom', fill='both', expand=True)			
+		else:
+			self.graph.clear()
+			#self.graph.plot(x,y)
+			#self.canvas.draw()
+		
+		self.graph.plot(x,y)
+		
+		#a.xaxis.set_major_locator(mdates.DayLocator())
+		#a.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+		#a.xaxis.set_minor_locator(months)
+		#self.graph.xaxis.get_major_ticks().xticks(rotation=70)
+		for tick in self.graph.get_xticklabels():
+			tick.set_rotation(30)
+			tick.set_horizontalalignment('right')
+		
+		self.canvas.draw()
+		
 class OptionWindow:
 	def __init__(self,parent,options):
 		self.win=parent

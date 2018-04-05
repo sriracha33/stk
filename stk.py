@@ -1157,7 +1157,8 @@ class DataGraphical:
 		paned.add(data_frame, padx=2)
 		
 		#data frame
-		f = plt.figure(1)
+		f = Figure()
+		self.ax=f.add_subplot(111)
 		self.canvas = FigureCanvasTkAgg(f, data_frame)
 		self.canvas.get_tk_widget().pack(side='bottom', fill='both', expand=True)			
 		
@@ -1322,18 +1323,12 @@ class DataGraphical:
 	
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
-	
-		#c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID LIMIT 4""",(ReportConfigID,)) 
-		#LabelName,LabelID=c.fetchone()
-		#LabelName,LabelID=c.fetchone()
-		#LabelName,LabelID=c.fetchone()
 
 		c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
 		results=c.fetchall()
 		x,y=zip(*results)
 		x=list(x)
 		x=map(lambda j: datetime.strptime(j,"%Y-%m-%d %H:%M:%S"),x)
-		#x=mdates.date2num(x)
 		y=list(y)
 		c.close()
 		self.db.close()
@@ -1344,15 +1339,13 @@ class DataGraphical:
 		#self.statustext.set(status)		
 		################################
 		
-		plt.clf()
-		plt.plot(x,y)
-		#plt.xticks(rotation=20)
-		ax=plt.gca()
-		for tick in ax.get_xticklabels():
+		self.ax.clear()
+		self.ax.plot(x,y)
+		for tick in self.ax.get_xticklabels():
 			tick.set_rotation(30)
 			tick.set_horizontalalignment('right')		
-		ax.set_title('%s - %s, %s'%(ReportTypeName,LocationName,SensorName))
-		plt.ylabel(LabelName)
+		self.ax.set_title('%s - %s, %s'%(ReportTypeName,LocationName,SensorName))
+		self.ax.set_ylabel(LabelName)
 		
 		#a.xaxis.set_major_locator(mdates.DayLocator())
 		#a.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))

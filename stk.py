@@ -440,6 +440,8 @@ class STK:
 	#creates and manages reports (self.report) and when a report is complete runs process_report
 	def process_line(self,line):
 		
+		self.display_line(line)
+		
 		#report is empty.  means a new report is ready to begin.  Checks for line 1 of report header
 		if not 'name' in self.report:
 			m=re.search(r"(?:\bSAMPLE CHECK REPORT\b|\bSTANDARDIZE REPORT\b|\bCALIBRATE SAMPLE REPORT\b)",line)

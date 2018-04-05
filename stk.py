@@ -11,7 +11,7 @@ from xml.dom import minidom
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use("TkAgg")
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 
@@ -207,6 +207,8 @@ class STK:
 		if confirm:
 			if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
 				return
+		#self.t.after_cancel(self.serialalarm)
+		#self.timetext.after_cancel(self.timealarm)
 		try:
 			self.db.close()
 		except:
@@ -219,6 +221,8 @@ class STK:
 			self.logfile.close()
 		except:
 			pass
+		
+		
 		self.root.destroy()
 	
 	#function to clear out the text display widget.
@@ -242,7 +246,7 @@ class STK:
 		timestr=datetime.now().strftime('%I:%M:%S %p')
 		if timestr!=self.timetext['text']:
 			self.timetext['text']=timestr
-		self.timetext.after(20,self.update_time)
+		self.timealarm=self.timetext.after(20,self.update_time)
 	
 	#function to connect to a serial port and begin monitoring for reports
 	def serial_connect(self,port=None):
@@ -336,7 +340,7 @@ class STK:
 			self.ag_win.focus_force()
 			self.ag_win.lift()
 			return
-		self.ag_win = Tkinter.Toplevel()
+		self.ag_win = Tkinter.Toplevel(height=800,width=1100)
 		self.ag_win.tk.call('wm', 'iconphoto', self.ag_win._w, self.icon)
 		DataGraphical(self.ag_win,self.options)
 		
@@ -1129,9 +1133,9 @@ class DataGraphical:
 		self.options=options
 		self.win=parent
 	
-		self.win.geometry("+100+100")
-		self.win.geometry("800x600")
-		self.win.minsize(800,600)
+		#self.win.geometry("+100+100")
+		#self.win.geometry("1000x800")
+		self.win.minsize(1000,800)
 		
 		#create status bar at the bottom of the window
 		statusbar=Tkinter.Frame(self.win,borderwidth=1, relief='sunken')
@@ -1151,7 +1155,9 @@ class DataGraphical:
 		paned.add(data_frame, padx=2)
 		
 		#data frame
-		pass
+		f = plt.figure(1)
+		self.canvas = FigureCanvasTkAgg(f, data_frame)
+		self.canvas.get_tk_widget().pack(side='bottom', fill='both', expand=True)			
 		
 		#report frame
 		generate_button=Tkinter.Button(report_frame, text="Generate Report", command=self.generate_graph,state='disabled')#, relief="ridge"
@@ -1188,13 +1194,25 @@ class DataGraphical:
 		end_entry.grid(row=5,column=1)
 		#move code ending here to new class
 		
+		lt_lframe=Tkinter.LabelFrame(report_frame,text="Labels")
+		lt_lframe.pack(side='bottom', fill='x')		
+		lt_vscroll = Tkinter.Scrollbar(lt_lframe)
+		lt_vscroll.pack(side='right', fill='y', padx=(0,2), pady=(0,2))			
+		label_tree=LabelTree(lt_lframe,self.options)
+		lt_lframe.pack(side='bottom', fill='both')		
+		label_tree.config(height=8)
+		label_tree.column("#0",stretch=True)
+		label_tree.pack(side='bottom',fill='x',anchor='s', padx=(2,0), pady=(0,2))
+		lt_vscroll.config(command=label_tree.yview)
+		label_tree.configure(yscrollcommand=lt_vscroll.set)			
+		
 		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
 		tt_lframe.pack(side='bottom', fill='x')		
 		tt_vscroll = Tkinter.Scrollbar(tt_lframe)
 		tt_vscroll.pack(side='right', fill='y', padx=(0,2), pady=(0,2))			
 		type_tree=ReportTypeTree(tt_lframe,self.options)
 		tt_lframe.pack(side='bottom', fill='both')		
-		type_tree.config(height=5)
+		type_tree.config(height=4)
 		type_tree.column("#0",stretch=True)
 		type_tree.pack(side='bottom',fill='x',anchor='s', padx=(2,0), pady=(0,2))
 		tt_vscroll.config(command=type_tree.yview)
@@ -1212,15 +1230,18 @@ class DataGraphical:
 		
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")
+		
+		type_tree.bind("<<TreeviewSelect>>",label_tree.update_labels,add="+")
+		type_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")		
 
 		self.report_tree=report_tree
 		self.type_tree=type_tree
+		self.label_tree=label_tree
 		self.generate_button=generate_button
 		self.start_entry=start_entry
 		self.end_entry=end_entry
 		self.data_frame=data_frame
-		self.graph=None
-
+		#self.graph=None
 
 	#function called when radio buttons change.  Will make custom dates disabled/normal
 	def change_filter(self):
@@ -1232,7 +1253,7 @@ class DataGraphical:
 			self.end_entry.config(state='disabled')
 
 	def generate_button_state(self):
-		if self.type_tree.get_children(""):
+		if self.label_tree.get_children(""):
 			self.generate_button['state']='active'
 		else:
 			self.generate_button['state']='disabled'
@@ -1275,26 +1296,35 @@ class DataGraphical:
 		#set starttime.seconds to zero just to avoid confusion
 		startdate=startdate.replace(second=0)
 	
+		#get selected LabelID from tree id
+		label=self.label_tree.selection()[0]
+		LabelID=label.split("_")[1]
+		LabelName=self.label_tree.item(label,'text')
+		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
+		SensorName=self.report_tree.item(sensor,'text')
 		SensorID=sensor.split("_")[1]
 	
 		#get selected sensor LocationID from tree id of parent
-		LocationID=self.report_tree.parent(sensor).split("_")[1]
+		location=self.report_tree.parent(sensor)
+		LocationID=location.split("_")[1]
+		LocationName=self.report_tree.item(location,'text')
 	
 		#get ReportTypeID from  tree
 		rtype=self.type_tree.selection()[0]
 		ReportConfigID=rtype.split("_")[1]
+		ReportTypeName=self.type_tree.item(rtype,'text')
 	
 		starttime=datetime.now()
 	
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 	
-		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID LIMIT 4""",(ReportConfigID,)) 
-		LabelName,LabelID=c.fetchone()
-		LabelName,LabelID=c.fetchone()
-		LabelName,LabelID=c.fetchone()
+		#c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID LIMIT 4""",(ReportConfigID,)) 
+		#LabelName,LabelID=c.fetchone()
+		#LabelName,LabelID=c.fetchone()
+		#LabelName,LabelID=c.fetchone()
 
 		c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
 		results=c.fetchall()
@@ -1312,25 +1342,21 @@ class DataGraphical:
 		#self.statustext.set(status)		
 		################################
 		
-		if self.graph is None:
-			f = Figure(figsize=(5,5), dpi=100)
-			self.graph=f.add_subplot(111)
-			self.canvas = FigureCanvasTkAgg(f, self.data_frame)
-			self.canvas.get_tk_widget().pack(side='bottom', fill='both', expand=True)			
-		else:
-			self.graph.clear()
-			#self.graph.plot(x,y)
-			#self.canvas.draw()
-		
-		self.graph.plot(x,y)
+		plt.clf()
+		plt.plot(x,y)
+		#plt.xticks(rotation=20)
+		ax=plt.gca()
+		for tick in ax.get_xticklabels():
+			tick.set_rotation(30)
+			tick.set_horizontalalignment('right')		
+		ax.set_title('%s - %s, %s'%(ReportTypeName,LocationName,SensorName))
+		plt.ylabel(LabelName)
 		
 		#a.xaxis.set_major_locator(mdates.DayLocator())
 		#a.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
 		#a.xaxis.set_minor_locator(months)
-		#self.graph.xaxis.get_major_ticks().xticks(rotation=70)
-		for tick in self.graph.get_xticklabels():
-			tick.set_rotation(30)
-			tick.set_horizontalalignment('right')
+		
+		
 		
 		self.canvas.draw()
 		
@@ -1495,6 +1521,9 @@ class ReportTypeTree(Treeview):
 		
 	def update_reports(self,event):
 		"""Method to be bound to by StructureTree <<Selection>> event.  Populates the ReportTypeTree with available report types."""
+		#always change selection so it can trigger downstream Trees
+		if self.get_children(""):
+			self.selection_set(self.selection())
 		self.delete(*self.get_children())
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
@@ -1523,7 +1552,37 @@ class ReportTypeTree(Treeview):
 			tkMessageBox.showerror("Error","Invalid item tag",parent=call_widget)
 		c.close()
 		self.db.close()
-	
+class LabelTree(Treeview):
+
+	def __init__(self,parent,options):
+		Treeview.__init__(self,parent,selectmode="browse", show='tree')
+		self.options=options
+		self.column("#0",stretch=True)
+
+	def update_labels(self,event):
+		"""Method to be bound to by ReportTypeTree <<Selection>> event.  Populates the LabelTree with available labels."""
+		self.delete(*self.get_children())
+		self.db = sqlite3.connect(self.options.dbfile)
+		c=self.db.cursor()
+		call_widget=event.widget
+		if call_widget.selection():
+			item=call_widget.selection()[0]
+		else:
+			return
+		ReportConfigID=item.split("_")[1]
+		c.execute("""SELECT DISTINCT LabelID,LabelName FROM v_structure WHERE ReportConfigID=? ORDER BY LabelID""",(ReportConfigID,))
+		results=c.fetchall()
+		if not results:
+			#self.generate_button.config(state='disabled')
+			c.close()
+			self.db.close()
+			return
+		#for ReportTypeID,ReportTypeName in results:
+		for LabelID,LabelName in results:
+			self.insert("", 'end', "Label_%d"%LabelID, text=LabelName)
+		self.selection_set(self.get_children("")[0])
+		c.close()
+		self.db.close()
 		
 class Options:
 	"""Class to hold all user defined option"""

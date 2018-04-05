@@ -1086,13 +1086,14 @@ class DataNumerical:
 		for ReportID, timestamp, LabelID, Value, GradeCode in c.fetchall():
 			if ReportID!=lastReportID:
 				if lastReportID!=-1:
-					self.data_tree.insert("",'end',text=timestamp,values=values)			
+					self.data_tree.insert("",'end',text=lastTimestamp,values=values)
 				values=[""] * LabelCount
 				if source==0:
 					values[0]=GradeCode				
 			i=LabelIDs.index(LabelID)
 			values[i]=Value
 			lastReportID=ReportID
+			lastTimestamp=timestamp
 		self.data_tree.insert("",'end',text=timestamp,values=values)
 		
 		c.close()

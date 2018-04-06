@@ -1064,8 +1064,6 @@ class DataNumerical:
 		source=c.fetchone()[0]
 		
 		if source==0:
-			#self.data_tree.column("#0",width=100)
-			#self.data_tree.heading("#0",text="Grade Code")
 			LabelNames.insert(0,'GRADE CODE')
 			LabelCount=len(LabelNames)
 			LabelIDs.insert(0,0)
@@ -1300,24 +1298,24 @@ class DataGraphical:
 		#set starttime.seconds to zero just to avoid confusion
 		startdate=startdate.replace(second=0)
 	
-		#get selected LabelID from tree id
+		#get selected LabelID/LabelName from label_tree id
 		label=self.label_tree.selection()[0]
 		LabelID=label.split("_")[1]
 		LabelName=self.label_tree.item(label,'text')
 		
-		#get selected SensorID from tree id
+		#get selected SensorName from structure_tree id
 		sensor=self.report_tree.selection()[0]
 		SensorName=self.report_tree.item(sensor,'text')
-		SensorID=sensor.split("_")[1]
+		#SensorID=sensor.split("_")[1]
 	
-		#get selected sensor LocationID from tree id of parent
+		#get selected sensor LocationID from structure_tree id of parent
 		location=self.report_tree.parent(sensor)
-		LocationID=location.split("_")[1]
+		#LocationID=location.split("_")[1]
 		LocationName=self.report_tree.item(location,'text')
 	
-		#get ReportTypeID from  tree
+		#get ReportTypeID from report_type_tree
 		rtype=self.type_tree.selection()[0]
-		ReportConfigID=rtype.split("_")[1]
+		#ReportConfigID=rtype.split("_")[1]
 		ReportTypeName=self.type_tree.item(rtype,'text')
 	
 		starttime=datetime.now()
@@ -1327,6 +1325,14 @@ class DataGraphical:
 
 		c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
 		results=c.fetchall()
+		records=len(results)
+		#need at least two results to make a GradeName
+		if records<2:
+			status="Plot failed. %d records found and two or more are required." % (records,)
+			self.statustext.set(status)
+			c.close()
+			self.db.close()			
+			return
 		x,y=zip(*results)
 		x=list(x)
 		x=map(lambda j: datetime.strptime(j,"%Y-%m-%d %H:%M:%S"),x)
@@ -1336,9 +1342,8 @@ class DataGraphical:
 	
 		endtime=datetime.now()
 		elapsed=endtime-starttime
-		#status="%d records found in %s seconds." % (records,elapsed.total_seconds())
-		#self.statustext.set(status)		
-		################################
+		status="%d records found in %s seconds." % (records,elapsed.total_seconds())
+		self.statustext.set(status)		
 		
 		self.ax.clear()
 		self.ax.plot(x,y)
@@ -1349,10 +1354,8 @@ class DataGraphical:
 		self.ax.set_ylabel(LabelName)
 		
 		#a.xaxis.set_major_locator(mdates.DayLocator())
-		#a.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+		self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S'))
 		#a.xaxis.set_minor_locator(months)
-		
-		
 		
 		self.canvas.draw()
 		

@@ -27,6 +27,7 @@ import sys
 
 def main():
 	
+	
 	stk=STK()
 	try:
 		stk.t.focus_force()
@@ -451,7 +452,7 @@ class STK:
 		#checks for line 2 of report header.
 		elif not 'machine' in self.report:
 			m=re.split(r"\s{2,}",line.strip())
-			if m:
+			if m and len(m)>=4:
 				self.report['machine']=m[1]
 				self.report['location']=m[2]
 				self.report['timestamp']=datetime.strptime(m[3],"%Y-%m-%d %H:%M")
@@ -465,6 +466,8 @@ class STK:
 				self.report['gradecode']=m.group(1)
 				self.report['gradename']=m.group(2).strip()
 				self.report['data']=[]
+			else:
+				self.report={}				
 		
 		#means end of report.  Process previous report and clear out data
 		elif re.search(r"END OF REPORT",line):
@@ -1345,17 +1348,26 @@ class DataGraphical:
 		status="%d records found in %s seconds." % (records,elapsed.total_seconds())
 		self.statustext.set(status)		
 		
+
+		
 		self.ax.clear()
 		self.ax.plot(x,y)
+		
 		for tick in self.ax.get_xticklabels():
 			tick.set_rotation(30)
 			tick.set_horizontalalignment('right')		
 		self.ax.set_title('%s - %s, %s'%(ReportTypeName,LocationName,SensorName))
 		self.ax.set_ylabel(LabelName)
 		
-		#a.xaxis.set_major_locator(mdates.DayLocator())
-		self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S'))
-		#a.xaxis.set_minor_locator(months)
+		#change defaults from AutoDateFormatter
+		locator = mdates.AutoDateLocator()
+		formatter = mdates.AutoDateFormatter(locator)
+		formatter.scaled[1/(24.*60.)] = '%Y-%m-%d %H:%M'
+		formatter.scaled[1/(24.)] = '%Y-%m-%d %H:%M'					
+		#formatter.scaled[1.0] = '%Y-%m-%d\n%H:%M'
+		#formatter.scaled[7.0] = '%Y-%m-%d\n%H:%M'		
+		self.ax.xaxis.set_major_locator(locator)
+		self.ax.xaxis.set_major_formatter(formatter)
 		
 		self.canvas.draw()
 		

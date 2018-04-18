@@ -1,5 +1,4 @@
 #!/usr/bin/python
-#from Tkinter import *
 import Tkinter
 from ttk import Treeview, Combobox, Style
 import tkFont
@@ -10,10 +9,10 @@ from xml.dom import minidom
 
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use("TkAgg")
+import matplotlib.dates as mdates
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import matplotlib.dates as mdates
+matplotlib.use("TkAgg")
 
 import tkMessageBox
 import time
@@ -38,6 +37,7 @@ class STK:
 	"""Main GUI class for STK application"""
 	
 	def __init__(self):
+		"""STK GUI class init method."""
 		root = Tkinter.Tk()
 		root.title("STK")
 		root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -188,24 +188,25 @@ class STK:
 			self.update_ports()
 		
 		self.update_time()
-		
-	
-	#function run when window closed from any way except File->Exit
 	
 	def on_closing(self):
-		if True:
-			if hasattr(self, 'an_win') and self.an_win.winfo_exists():
-				self.an_win.destroy()
-				del self.an_win
-			if hasattr(self, 'rc_win') and self.rc_win.winfo_exists():
-				self.rc_win.destroy()
-				del self.rc_win
-			self.root.iconify()
-			return
-		self.exit()
+		"""Function run when window closed from any way except File->Exit. Minimizes root and closes all other windows."""
+		if hasattr(self, 'an_win') and self.an_win.winfo_exists():
+			self.an_win.destroy()
+			del self.an_win
+		if hasattr(self, 'rc_win') and self.rc_win.winfo_exists():
+			self.rc_win.destroy()
+			del self.rc_win
+		if hasattr(self, 'ag_win') and self.ag_win.winfo_exists():
+				self.ag_win.destroy()
+				del self.ag_win		
+		if hasattr(self, 'option_win') and self.option_win.winfo_exists():
+				self.option_win.destroy()
+				del self.option_win			
+		self.root.iconify()
 	
-	#function which runs on exit which makes sure everything is closed out.
 	def exit(self,confirm=True):
+		"""Function which runs on exit which makes sure everything is closed out."""
 		if confirm:
 			if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
 				return
@@ -225,14 +226,14 @@ class STK:
 		
 		self.root.destroy()
 	
-	#function to clear out the text display widget.
 	def clear_window(self):
+		"""Function to clear out the text display widget."""
 		self.t.configure(state='normal')
 		self.t.delete('1.0','end')
 		self.t.configure(state='disabled')
 	
-	#function which gets current list of serial ports and makes connect menu show them
 	def update_ports(self):
+		"""Function which gets current list of serial ports and makes connect menu show them."""
 		while self.serialmenu.index("end") is not None:
 			self.serialmenu.delete(0)
 		comports = sorted(serial.tools.list_ports.comports(), key=lambda x: x[0])
@@ -248,8 +249,8 @@ class STK:
 			self.timetext['text']=timestr
 		self.timealarm=self.timetext.after(20,self.update_time)
 	
-	#function to connect to a serial port and begin monitoring for reports
 	def serial_connect(self,port=None):
+		"""Function to connect to a serial port and begin monitoring for reports."""
 		if port is not None:
 			self.options.serial_port=port
 		port=self.options.serial_port
@@ -291,13 +292,13 @@ class STK:
 		self.serialmenu.add_command(label='Disconnect', command=self.serial_disconnect)	
 		
 		self.log_process("Connected to %s" % (port,))
-		#self.menubar.entryconfigure(2, state=DISABLED)
 		self.statusicon.itemconfigure('all', fill="green")
 		self.statustext.config(text="Connected to port: %s at %s,%s,%s,%s"%(port,self.serial.baudrate,self.serial.bytesize,self.serial.parity,self.serial.stopbits))
 		self.process_serial()
 	
-	#function to disconnect serial.  Done if there is a serial error.
+	
 	def serial_disconnect(self):
+		"""Function to disconnect serial.  Called if manually closed or if there is a serial error."""
 		self.serial.close()
 		self.t.after_cancel(self.serialalarm)
 		self.update_ports()
@@ -305,22 +306,21 @@ class STK:
 		self.statusicon.itemconfigure('all', fill="red")
 		self.statustext.config(text="Disconnected")
 		
-	#function to log timestamp and process string to process log file
 	def log_process(self,message):
+		"""Function to log timestamp and process string to process log file."""
 		processlog=open(self.processfile,"a")
 		timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 		logmessage = timestamp + " - " + message + "\n"
 		processlog.write(logmessage)
 		processlog.close()
 	
-	#function to log timestamp and error string to error log file
 	def log_error(self,message):
+		"""Function to log timestamp and error string to error log file."""
 		errorlog=open(self.errorfile,"a")
 		timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 		logmessage = timestamp + " - " + message + "\n"
 		errorlog.write(logmessage)
 		errorlog.close()	
-	
 	
 	def analyze_numerical(self):
 		"""Function to load the Analyze Numerical window"""
@@ -329,7 +329,7 @@ class STK:
 			self.an_win.focus_force()
 			self.an_win.lift()
 			return
-		self.an_win = Tkinter.Toplevel()
+		self.an_win = Tkinter.Toplevel(height=600,width=800)
 		self.an_win.tk.call('wm', 'iconphoto', self.an_win._w, self.icon)
 		DataNumerical(self.an_win,self.options)
 
@@ -344,9 +344,9 @@ class STK:
 		self.ag_win.tk.call('wm', 'iconphoto', self.ag_win._w, self.icon)
 		DataGraphical(self.ag_win,self.options)
 		
-	#function to open/close log file. One function to make tk binding easier
 	def open_logfile(self):
-		"""Function to open/close log file, depending on the current state"""
+		"""Function to open/close log file, depending on the current state."""
+		#if logfile is open, close it.  If not, open a new one.
 		if self.logfile:
 			self.logfile.close()
 			self.logfile=None
@@ -355,7 +355,6 @@ class STK:
 			self.logfile = asksaveasfilename(title='Select Output File',filetypes=[('Log File','*.log'),("All Files", "*.*"),],defaultextension = '.log')
 			if not self.logfile:
 				return
-			#open logfile
 			self.logfile=open(self.logfile,"wb")
 			self.filemenu.entryconfigure(0, label="Close Log File")
 	
@@ -374,21 +373,30 @@ class STK:
 			self.rc_win.focus_force()
 			self.rc_win.lift()
 			return
-		self.rc_win = Tkinter.Toplevel()
+		self.rc_win = Tkinter.Toplevel(height=600,width=800)
 		self.rc_win.tk.call('wm', 'iconphoto', self.rc_win._w, self.icon)
 		ReportConfig(self.rc_win,self.options)
 	
-	#function to process log file.  Can process multiple at the same time.  Used for both configuration and importing of reports
+	
 	def process_logfile(self):
+		"""Function to process log file.  Can process multiple at the same time.  Used for both configuration and importing of reports."""
+		
+		#prompt for logfile name(s).  Can select multiple
 		logfilenames = askopenfilenames(title='Select Log File',filetypes=[('Log File','*.log'),("All Files", "*.*"),],defaultextension = '.log')
 		if not logfilenames:
 			return
+		
+		#capture current status bar information to resume after
 		oldstatus=self.statustext['text']
 		oldcolor=self.statusicon.itemcget('all',"fill")
 		self.statusicon.itemconfigure('all', fill="yellow")
+		
+		#if serial monitoring is active suspent it temporarily
 		if self.serialalarm:
 			self.t.after_cancel(self.serialalarm)
 		temp_report=self.report.copy()
+		
+		#process each logfile
 		for logfilename in logfilenames:
 			self.log_process("Beginning import of file %s"%logfilename)
 			self.statustext['text']="Importing log file %s"%logfilename
@@ -398,6 +406,7 @@ class STK:
 					self.process_line(line)
 			self.log_process("Import of file %s complete"%logfilename)
 		
+		#restore progress/status from before import
 		self.report = temp_report.copy()
 		if self.serialalarm:
 			self.serialalarm = self.t.after(10,self.process_serial)
@@ -408,29 +417,33 @@ class STK:
 	#function to process serial port.  Reads and combines bytes into lines for processing/
 	#also logs data to logfile byte for byte
 	def process_serial(self):
+		"""Function to process serial port.  Used for report processing and logging."""
 		try:
 			while self.serial.inWaiting()>0:
 					inbyte=self.serial.read()
+					#log file byte for byte
 					if self.logfile:
 						self.logfile.write(inbyte)
 					self.stringbuffer+=inbyte
+					#look for line ending string and when found process the line.
 					if self.stringbuffer[-2:]=='\r\n':
 						line=self.stringbuffer
 						self.stringbuffer=""
 						self.root.update_idletasks()
 						self.process_line(line)
-						
 			self.serialalarm = self.t.after(10,self.process_serial)
 		except serial.SerialException:
 			self.log_error("Error reading from serial port. Disconnecting.")
 			self.serial_disconnect()
 		
-	#functions to display a line of text at the bottom of the text window and manage max size
 	def display_line(self,line):
+		"""Functions to display a line of text at the bottom of the serial monitor and manage max displayed lines."""
+		#display the new line
 		line=re.sub(r'(\r|\f)',r'',line) #remove \r and \f for displaying (linux)
 		self.t.config(state='normal')
 		self.t.insert('end',line)
 		self.t.see('end')
+		
 		#remove extra rows so we are within the max.
 		while int(eval(self.t.index('end-1c')))>self.options.maxlines:
 			self.t.delete('1.0','2.0')
@@ -439,7 +452,7 @@ class STK:
 	#function to process a line of text from process_serial or process_logfile
 	#creates and manages reports (self.report) and when a report is complete runs process_report
 	def process_line(self,line):
-		
+		"""Function to process a line of text from process_serial or process_logfile and populates a report."""
 		self.display_line(line)
 		
 		#report is empty.  means a new report is ready to begin.  Checks for line 1 of report header
@@ -476,9 +489,9 @@ class STK:
 		
 		#if there's a report header, but it's not after an "END OF REPORT".  Means previous was partial.  Start over.
 		elif re.search(r"(?:SAMPLE CHECK REPORT|STANDARDIZE REPORT|CALIBRATE SAMPLE REPORT|REEL REPORT)",line):
-			self.log_error("Unexpected Report End")
+			self.log_error("Unexpected Report Termination")
 			self.report={}
-			m=re.search(r"(?:SAMPLE CHECK REPORT|STANDARDIZE REPORT|CALIBRATE SAMPLE REPORT|REEL REPORT|)",line)
+			m=re.search(r"(?:SAMPLE CHECK REPORT|STANDARDIZE REPORT|CALIBRATE SAMPLE REPORT)",line)
 			if m:
 				self.report['name']=m.group(0)
 		
@@ -489,11 +502,12 @@ class STK:
 				self.report['data'].append({'sensor': line.strip()})
 				self.report['data'][-1]['labels']=[]
 				self.report['data'][-1]['values']=[]
-			else: # first sub report
+			
+			#first sub report. rename all the labels with [subsensor name]_[label]
+			else: 
 				self.sublabels=list(self.report['data'][-1]['labels'])
-				if line.strip() == 'IR1' or True:
-					for i,label in enumerate(self.sublabels):
-						self.report['data'][-1]['labels'][i]=line.strip() + "_" + label 
+				for i,label in enumerate(self.sublabels):
+					self.report['data'][-1]['labels'][i]=line.strip() + "_" + label 
 				
 		#all numbers/characters used in numbers.  Means it's values
 		elif re.search(r"^[0-9Ee\+\-\.]+[0-9Ee\+\-\.\s]+$",line.strip()):
@@ -508,9 +522,10 @@ class STK:
 					self.report['data'][-1]['labels'].append(newsub + "_" + label)
 			
 			values=re.split(r"\s{2,}",line.strip())
+			#values=[line[0:14],line[14:28],line[28:42],line[42:56],line[56:70]]
 			self.report['data'][-1]['values'].extend(values)
 			
-			#make sure there are not more values than labels.  Used in case of subreports
+			#make sure there are not more values than labels.  Used in case of subreports where there are extra 0 values
 			if len(self.report['data'][-1]['values'])>len(self.report['data'][-1]['labels']):
 				del(self.report['data'][-1]['values'][len(self.report['data'][-1]['labels']):len(self.report['data'][-1]['values'])])
 		
@@ -545,8 +560,6 @@ class STK:
 		
 		#check if number of values=number of labels
 		if len(report.Values)!=len(report.LabelNames):
-			#self.log_process("Label and Value count do not match. Labels=%d, Values=%d"%(len(report.LabelNames),len(report.Values)))
-			#print "Label/Error count mismatch"
 			self.log_error("Label/Error count mismatch for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return
 			
@@ -554,41 +567,43 @@ class STK:
 		c.execute("""SELECT ReportConfigID from v_structure WHERE LocationName=? and SensorName=? and ReportTypeName=?""",(report.LocationName,report.SensorName,report.ReportTypeName))
 		result=c.fetchone()
 		if result is None:
-			#print "report config not found"
 			self.log_error("Report Config not found for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return
 		else:
 			ReportConfigID=result[0]
-			#print ReportConfigID,
 		
 		#check if labels are configured in database and they match the current report labels
 		c.execute("""SELECT LabelID,LabelName from v_structure WHERE ReportConfigID=?""",(ReportConfigID,))
 		labels=c.fetchall()
 		if len(labels)==0:
-			#print "no labels"
 			self.log_error("No labels found for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return				
 		if sorted(report.LabelNames)!=sorted([x[1] for x in labels]):
-			print "labels do not match"
 			self.log_error("Label mismatch for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return
 		
-		#check if grade exists and has correct name
+		#check if grade exists and has correct name.  If not not, add grade/update name
 		c.execute('''SELECT GradeID,GradeName FROM grades WHERE GradeCode = ?''',(report.GradeCode,))
 		result=c.fetchone()
+		
+		#grade exists
 		if result:
 			GradeID=result[0]
+			#update name if it has changed
 			if result[1]!=report.GradeName:
 				c.execute('''UPDATE grades SET GradeName=? WHERE GradeID = ?''',(report.GradeName,GradeID))
 				self.log_process("Updated grade %s name from %s to %s"%(report.GradeCode,result[1],report.GradeName))
+		#grade doesn't exist. Add it.
 		else:
 			c.execute('''INSERT INTO grades (GradeID, GradeCode, GradeName) VALUES (NULL,?,?)''', (report.GradeCode,report.GradeName))
 			GradeID=c.lastrowid
 			self.log_process("Added missing grade %s %s"%(report.GradeCode,report.GradeName))		
 		
+		#log overall report into database
 		c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,?)''', (report.Timestamp,ReportConfigID,GradeID))
 		ReportID=c.lastrowid
 		
+		#log individual labels/values to database
 		for LabelID,LabelName in labels:
 			i=report.LabelNames.index(LabelName)
 			c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,report.Values[i]))
@@ -598,7 +613,6 @@ class STK:
 		
 	def learn_report(self,report):
 		"""Function to process an individual sensor report to modify the configuration in the database."""
-		#need to update this to take in a Report class as an argument
 		
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
@@ -623,7 +637,7 @@ class STK:
 			LocationID=c.lastrowid
 			self.log_process("New location %s added to database"%report.LocationName)
 			
-		#check if sensor exists
+		#check/add sensor exists
 		c.execute('''SELECT SensorID FROM sensors WHERE SensorName = ? and LocationID = ?''',(report.SensorName,LocationID))
 		result=c.fetchone()
 		if result:
@@ -643,6 +657,7 @@ class STK:
 			ReportConfigID=c.lastrowid
 			self.log_process("New report configuration for sensor %s at location %s with type %s added to database"%(report.SensorName,report.LocationName,report.ReportTypeName))
 			
+		#check/add label exists
 		for LabelName in report.LabelNames:
 			c.execute('''SELECT LabelID FROM labels WHERE LabelName = ? and ReportConfigID = ?''',(LabelName,ReportConfigID))
 			result=c.fetchone()
@@ -658,10 +673,12 @@ class STK:
 		self.db.close()
 		
 	def init_database(self):
-		"""Method to create a blank database in the correct format.  Run if database does not exists"""
+		"""Method to create a blank database in the correct format.  Run if database does not exists.  Returns True if valid database is found, False if not."""
 		changed=False
+		#loop while there is no valid database
 		while not self.check_database(self.options.dbfile):
 			changed=True
+			#check if database file exists
 			if not os.path.isfile(self.options.dbfile):
 				answer=tkMessageBox.askyesno("Database not found","Database not found\nWould you like to browse for a current database?")
 				if answer:
@@ -669,6 +686,7 @@ class STK:
 					if self.check_database(self.options.dbfile):
 						continue
 	
+			#if there is still no valid databased selected (version mismatch or selecting a new database fails in some way) offer to create a blank one.
 			answer=tkMessageBox.askyesno("Invalid Database","Would you like to create a new database?")
 			if answer:
 				dbfile=asksaveasfilename(title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db',confirmoverwrite=False)
@@ -684,6 +702,7 @@ class STK:
 			else:
 				return False
 			
+		#if database is changed (name/location), offer to save to configuration file.
 		if changed:
 			answer=tkMessageBox.askyesno("Save Default Database?","Would you like this to be your new default database?")
 			if answer:
@@ -691,6 +710,8 @@ class STK:
 		return True
 			
 	def check_database(self,dbfile):
+		"""Function to check for a valid database.  Checks that the file exists and the version matches the current application version"""
+		#check if file exists
 		if os.path.isfile(dbfile):
 			#check if db version matches STK version
 			db=sqlite3.connect(dbfile)
@@ -711,7 +732,7 @@ class STK:
 			return False
 		
 	def create_database(self):
-		#tkMessageBox.showinfo("Database not found","Database not found\nCreating blank database at %s"%self.options.dbfile)
+		"""Function to create a blank database"""
 		db = sqlite3.connect(self.options.dbfile)
 		c=db.cursor()		
 		c.execute("""CREATE TABLE "config" ( `DatabaseVersion` TEXT NOT NULL, `MachineName` TEXT DEFAULT NULL, `CustomerName` TEXT DEFAULT NULL, `CustomerLocation` TEXT DEFAULT NULL )""")
@@ -730,6 +751,7 @@ class STK:
 		db.close()		
 		
 	def edit_options(self):
+		"""Function to open the options window."""
 		if hasattr(self, 'option_win') and self.option_win.winfo_exists():
 			self.option_win.deiconify()
 			self.option_win.focus_force()
@@ -741,19 +763,22 @@ class STK:
 		OptionWindow(self.option_win,self.options)
 
 class ReportConfig:
+	"""Class for a GUI window to manually edit report configurations."""	
+	
 	def __init__(self,parent,options):
+		"""ReportConfig class init method."""
 		self.options=options
-		#self.icon=config.icon
 		self.win=parent
 	
-		self.win.geometry("+100+100")
-		self.win.geometry("800x600")
+		self.win.geometry("+125+125")
+		self.win.pack_propagate(0)
 		self.win.minsize(800,600)
 		
 		#split window into two panes
 		paned=Tkinter.PanedWindow(self.win,orient='horizontal')
 		paned.pack(fill='both',expand=1)
 		
+		#left column in report_frame where you select report structure items
 		report_frame=Tkinter.Frame(paned, width=270)
 		paned.add(report_frame, minsize=270)
 		report_frame.grid_propagate(0)
@@ -763,9 +788,13 @@ class ReportConfig:
 		report_frame.rowconfigure(1, weight = 0)
 		report_frame.rowconfigure(2, weight = 0)
 		
+		#right column is data_frame which will show report data?
 		data_frame=Tkinter.LabelFrame(paned,text="Report Configuration")
 		paned.add(data_frame)
 		
+		###LEFT PANE###
+		
+		#add machine structure selection items
 		rt_lframe=Tkinter.LabelFrame(report_frame,text="Machine Structure")
 		rt_lframe.grid(column=0,row=0,sticky='wens',padx=2)
 		rt_lframe.columnconfigure(0, weight = 1)
@@ -786,6 +815,7 @@ class ReportConfig:
 		rt_vscroll.config(command=report_tree.yview)
 		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
+		#Add report types selection items
 		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
 		tt_lframe.grid(column=0,row=1,sticky='wens',padx=2)
 		tt_lframe.columnconfigure(0, weight = 1)
@@ -807,11 +837,11 @@ class ReportConfig:
 		tt_vscroll.config(command=type_tree.yview)
 		type_tree.configure(yscrollcommand=tt_vscroll.set)		
 			
-		
+		#add bindings to update trees above
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",self.button_states,add="+")
 		
-		
+		#add selector for report source type
 		self.source = Tkinter.IntVar(value=0)
 		rs_lframe=Tkinter.LabelFrame(report_frame,text="Report Source Type")
 		rs_lframe.grid(column=0,row=2,sticky='wens',padx=2)
@@ -824,6 +854,8 @@ class ReportConfig:
 		Tkinter.Radiobutton(rs_lframe, text="OPC Datalogger", variable=self.source, value=1,anchor='w').grid(row=1,column=0,columnspan=2,sticky='wens')
 		Tkinter.Button(rs_lframe,text="Create New Report",command=self.create_report).grid(column=0,row=2,columnspan=2,sticky='wens',padx=2,pady=2)
 		
+		###RIGHT PANE###
+		pass
 		
 		##Self Declarations##
 		self.type_tree=type_tree
@@ -867,32 +899,36 @@ class ReportConfig:
 		print self.source.get()
 		
 class DataNumerical:
+	"""Class for a GUI window to analyze data numerically."""
+		
 	def __init__(self,parent,options):
+		"""DataNumerical class init method."""
 		self.options=options
 		self.an_win=parent
 		
-		self.an_win.geometry("+100+100")
-		self.an_win.geometry("800x600")
+		self.an_win.geometry("+125+125")
+		self.an_win.pack_propagate(0)
 		self.an_win.minsize(800,600)
+		
 		
 		#create status bar at the bottom of the window
 		statusbar=Tkinter.Frame(self.an_win,borderwidth=1, relief='sunken')
 		statusbar.pack(side='bottom', fill='x')
 		self.statustext = Tkinter.StringVar()
-		#self.statustext.set('Status');
 		Tkinter.Label(statusbar, textvariable=self.statustext, anchor='w').pack(side='left')		
 		
 		#split window into two panes
 		paned=Tkinter.PanedWindow(self.an_win,orient='horizontal')
 		paned.pack(fill='both',expand=1)		
 		
+		#add frame to each pane.
 		report_frame=Tkinter.Frame(paned)
 		paned.add(report_frame, minsize=250, padx=2)
 		report_frame.pack_propagate(0)
 		data_frame=Tkinter.Frame(paned)
 		paned.add(data_frame, padx=2)
 		
-		#data frame
+		###RIGHT PANE###
 		data_tree=Treeview(data_frame,selectmode="browse", show="tree")
 		hscroll = Tkinter.Scrollbar(data_frame,orient="horizontal")
 		hscroll.pack(side="bottom", fill="x")
@@ -904,18 +940,20 @@ class DataNumerical:
 		hscroll.config(command=data_tree.xview)
 		data_tree.configure(xscrollcommand=hscroll.set)
 		
-		#report frame
+		###LEFT PANE###
+		
+		#add buttons at bottom to generate report and save as CSV
 		csv_button=Tkinter.Button(report_frame, text="Save as CSV", command=self.save_csv,state='disabled')#, relief="ridge"
 		csv_button.pack(side="bottom", fill="x", padx=1,pady=(0,2))
 		generate_button=Tkinter.Button(report_frame, text="Generate Report", command=self.generate_report,state='disabled')#, relief="ridge"
 		generate_button.pack(side="bottom", fill="x", padx=1,pady=2)
 		
-		##variable##
+		#variables used down the line#
 		self.filter_select = Tkinter.IntVar()
 		self.filter_start = Tkinter.StringVar()
 		self.filter_end = Tkinter.StringVar()
 		
-		#filter_frame=Frame(report_frame,width=225,height=200, relief="sunken", borderwidth=1,bg="white")
+		#filter box
 		ff_lframe=Tkinter.LabelFrame(report_frame,text="Time Filter")
 		ff_lframe.pack(side='bottom', fill='x')
 		filter_frame=Tkinter.Frame(ff_lframe,width=225,height=200)
@@ -941,6 +979,7 @@ class DataNumerical:
 		end_entry.grid(row=5,column=1)
 		#move code ending here to new class
 		
+		#report type selection box
 		tt_lframe=Tkinter.LabelFrame(report_frame,text="Report Types")
 		tt_lframe.pack(side='bottom', fill='x')		
 		tt_vscroll = Tkinter.Scrollbar(tt_lframe)
@@ -953,6 +992,7 @@ class DataNumerical:
 		tt_vscroll.config(command=type_tree.yview)
 		type_tree.configure(yscrollcommand=tt_vscroll.set)		
 		
+		#machine structure selection box
 		rt_lframe=Tkinter.LabelFrame(report_frame,text="Machine Structure")
 		rt_lframe.pack(side='bottom', fill='both', expand=True)	
 		rt_vscroll = Tkinter.Scrollbar(rt_lframe)
@@ -963,9 +1003,12 @@ class DataNumerical:
 		rt_vscroll.config(command=report_tree.yview)
 		report_tree.configure(yscrollcommand=rt_vscroll.set)		
 		
+		#add bindings to update report type tree when machince structure selection changes
 		report_tree.bind("<<TreeviewSelect>>",type_tree.update_reports,add="+")
 		report_tree.bind("<<TreeviewSelect>>",lambda event: self.generate_button_state(),add="+")
 
+		
+		##Class Variables##
 		self.report_tree=report_tree
 		self.type_tree=type_tree
 		self.data_tree=data_tree
@@ -974,9 +1017,8 @@ class DataNumerical:
 		self.start_entry=start_entry
 		self.end_entry=end_entry
 		
-		
-	#function called when radio buttons change.  Will make custom dates disabled/normal
 	def change_filter(self):
+		"""Function called when filter radio buttons change.  Will make custom dates disabled/normal"""
 		if self.filter_select.get()==5:
 			self.start_entry.config(state='normal')
 			self.end_entry.config(state='normal')
@@ -985,6 +1027,7 @@ class DataNumerical:
 			self.end_entry.config(state='disabled')
 	
 	def generate_button_state(self):
+		"""Function called to enable/disable the generate button based on if a report is selected or not.""" 
 		if self.type_tree.get_children(""):
 			self.generate_button['state']='active'
 		else:
@@ -992,8 +1035,9 @@ class DataNumerical:
 		
 	def generate_report(self):
 		"""Function to get report data from database and populate self.data_tree with results."""
-		#clear out data_tree
+		#clear out data_tree and disable csv button
 		self.data_tree.delete(*self.data_tree.get_children())
+		self.csv_button.config(state='disabled')
 		
 		#should never happen now, but if sensor or type are not selected, don't do anything
 		if not self.report_tree.selection() or not self.type_tree.selection():
@@ -1046,41 +1090,42 @@ class DataNumerical:
 		rtype=self.type_tree.selection()[0]
 		ReportConfigID=rtype.split("_")[1]
 		
-		self.csv_button.config(state='disabled')
-		
+		#start time used to calculate time to generate report
 		starttime=datetime.now()
 		
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
 		
+		#get all label names to generate headers in the report tree
 		c.execute("""SELECT DISTINCT LabelName,LabelID from v_structure WHERE ReportConfigID=? ORDER BY labelID""",(ReportConfigID,)) 
 		results=c.fetchall()		
 		
+		#break up into two lists for Names and IDs of labels
 		LabelNames,LabelIDs=zip(*results)
 		LabelCount=len(LabelNames)
 		LabelNames=list(LabelNames)
 		LabelIDs=list(LabelIDs)
-	
 		
+		#if report is a serial report there will be grade info. Check if it is and add grade number as a label
 		c.execute("""SELECT ReportSource from v_structure WHERE ReportConfigID=?""",(ReportConfigID,)) 
 		source=c.fetchone()[0]
-		
 		if source==0:
 			LabelNames.insert(0,'GRADE CODE')
 			LabelCount=len(LabelNames)
 			LabelIDs.insert(0,0)
 
+		#update headers of the tree
 		self.data_tree["columns"]=LabelIDs
 		self.data_tree.column("#0",width=160)
 		self.data_tree.heading("#0",text="TIMESTAMP")				
-		
-		
 		for i,LabelName in enumerate(LabelNames):
 			w=int(tkFont.nametofont('TkHeadingFont').measure(LabelName)*1.25)
 			w=max(w,75)
 			self.data_tree.column(LabelIDs[i],width=w)
 			self.data_tree.heading(LabelIDs[i],text=LabelName)
 		
+		#pull out all the values and update the report one row at a time.  
+		#Fills a whole row of data while the report ID stays the same, and when it changes, update the tree.
 		lastReportID=-1
 		c.execute("""SELECT ReportID, timestamp, LabelID, Value, GradeCode from v_reportData WHERE ReportConfigID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate,enddate))
 		for ReportID, timestamp, LabelID, Value, GradeCode in c.fetchall():
@@ -1099,8 +1144,10 @@ class DataNumerical:
 		c.close()
 		self.db.close()
 		
+		#get number of records returned for status display
 		records = len(self.data_tree.get_children())
 		
+		#based on if any records where found, update gui as such
 		if records==0:
 			self.data_tree.insert("",'end',text="No data found")
 			self.data_tree['show']='tree'
@@ -1109,42 +1156,53 @@ class DataNumerical:
 			self.csv_button.config(state='active')
 			self.data_tree['show']='tree headings'
 			
+		#update status bar with elapsed time/record count
 		endtime=datetime.now()
 		elapsed=endtime-starttime
 		status="%d records found in %s seconds." % (records,elapsed.total_seconds())
 		self.statustext.set(status)
 		
 	def save_csv(self):
+		"""Function to export data show in generated report to a CSV file of the user's choosing."""
+		#ignore if no data found.  Shouldn't ever happen because button should be disabled in this case.
 		if not self.data_tree.get_children():
 			return
-		timestamp = [self.data_tree.heading("#0",option="text")]
+		
+		#generate header row
+		headers=[self.data_tree.heading("#0",option="text")]
+		for column in self.data_tree['columns']:
+			headers.append(self.data_tree.heading(column,'text'))
+		
 		outfile=asksaveasfilename(parent=self.an_win, title='Select Output File',filetypes=[('Comma Separated Values','*.csv'),("All Files", "*.*"),],defaultextension = '.csv')
 		if not outfile:
 			return
+		
+		#write data to csv file:
 		with open(outfile, 'wb') as csvfile:
 			writer = csv.writer(csvfile, delimiter=',')
-			writer.writerow(timestamp + list(self.data_tree['columns']))
+			writer.writerow(headers)
 			for report in self.data_tree.get_children():
-				timestamp=[]
-				timestamp.append(self.data_tree.item(report)['text'])
-				row=list(str(x) for x in self.data_tree.item(report)['values'])
-				line=','.join(timestamp+row)
-				writer.writerow(timestamp+row)
+				row=[]
+				row.append(self.data_tree.item(report)['text'])
+				row=row+list(str(x) for x in self.data_tree.item(report)['values'])
+				writer.writerow(row)
 
 class DataGraphical:
+	"""Class for a GUI window to analyze data graphically."""
+	
 	def __init__(self,parent,options):
+		"""DataGraphical class init method."""
 		self.options=options
 		self.win=parent
 	
-		#self.win.geometry("+100+100")
-		#self.win.geometry("1000x800")
-		self.win.minsize(1000,800)
+		self.win.geometry("+125+125")
+		self.win.minsize(800,600)
+		self.win.pack_propagate(0)
 		
 		#create status bar at the bottom of the window
 		statusbar=Tkinter.Frame(self.win,borderwidth=1, relief='sunken')
 		statusbar.pack(side='bottom', fill='x')
 		self.statustext = Tkinter.StringVar()
-		#self.statustext.set('Status');
 		Tkinter.Label(statusbar, textvariable=self.statustext, anchor='w').pack(side='left')		
 		
 		#split window into two panes
@@ -1371,13 +1429,18 @@ class DataGraphical:
 		self.canvas.draw()
 		
 class OptionWindow:
+	"""Class for a GUI window to edit options."""
+	
 	def __init__(self,parent,options):
+		"""OptionWindow class init method."""
 		self.win=parent
 		self.options=options
-		self.win.geometry("+100+100")
+		
+		self.win.geometry("+125+125")
 		self.win.resizable(False,False)
 		self.win.deiconify()
 		
+		#Add LabelFrames for all the catagories
 		self.gen_lframe=Tkinter.LabelFrame(self.win,text="General Options")
 		self.gen_lframe.pack(padx=2, fill='x', expand=True)
 		
@@ -1387,17 +1450,19 @@ class OptionWindow:
 		self.button_frame=Tkinter.Frame(self.win)
 		self.button_frame.pack(pady=2)
 		
+		#configure grid rows
 		self.gen_lframe.rowconfigure(0,weight=1,uniform='all')
 		self.gen_lframe.rowconfigure(1,weight=1,uniform='all')
-		#self.gen_lframe.rowconfigure(2,weight=1,uniform='all')
 		self.serial_lframe.rowconfigure(0,weight=1,uniform='all')
 		self.serial_lframe.rowconfigure(1,weight=1,uniform='all')
 		self.serial_lframe.rowconfigure(2,weight=1,uniform='all')
 		self.serial_lframe.rowconfigure(3,weight=1,uniform='all')
 		
-		self.entries={}
-		self.variables={}
+		#variable declarations
+		self.entries={}		#widgets containing options
+		self.variables={}	#tkinter variables which hold the values for options
 
+		#Labels 
 		Tkinter.Label(self.gen_lframe,text="Database File:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.gen_lframe,text="Display Max Lines:", anchor='w').grid(row=1,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="COM Port:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
@@ -1405,11 +1470,14 @@ class OptionWindow:
 		Tkinter.Label(self.serial_lframe,text="Byte Size:", anchor='w').grid(row=1,column=2, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Parity:", anchor='w').grid(row=2,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Stop Bits:", anchor='w').grid(row=2,column=2, sticky='wens', padx=2, pady=2)
+		
+		#Buttons
 		Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database, width=8,).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
 		Tkinter.Button(self.serial_lframe,text="Refresh", command=self.refresh_ports, width=8).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
 		Tkinter.Button(self.button_frame,text="Save", command=self.save, width=8).pack(side='left', padx=1)
 		Tkinter.Button(self.button_frame,text="Cancel", command=self.cancel, width=8).pack(side='left', padx=1)
 		
+		#Option Widgets
 		self.entries['dbfile']=Tkinter.Entry(self.gen_lframe,state='readonly', readonlybackground='white', width=30)
 		self.entries['dbfile'].grid(row=0,column=1,columnspan=2, sticky='wens', padx=2, pady=2)					
 		self.entries['maxlines']=Tkinter.Spinbox(self.gen_lframe, width=8, from_=25, to=1000, increment=25, state='readonly', readonlybackground='white')
@@ -1427,6 +1495,7 @@ class OptionWindow:
 		self.entries['serial_autoconnect']=Tkinter.Checkbutton(self.serial_lframe, text="Autoconnect")
 		self.entries['serial_autoconnect'].grid(row=3,column=0, sticky='wns', padx=2, pady=2, columnspan=2)		
 		
+		#create and assign variables to widgets
 		for key in self.entries:
 			widgettype=self.entries[key].winfo_class()
 			if widgettype=='Checkbutton':
@@ -1441,15 +1510,18 @@ class OptionWindow:
 		self.refresh_ports()
 	
 	def save(self):
+		"""Function to make all the values in the widgets/variables active and save them to the congig file."""
 		for key,value in self.variables.iteritems():
 			setattr(self.options,key,value.get())
 		self.options.save()
 		self.win.destroy()
 	
 	def cancel(self):
+		"""Function to cancel (don't make any changes active/saved"""
 		self.win.destroy()
 	
 	def refresh_ports(self):
+		"""Function to refresh the list of com ports."""
 		comports = sorted(serial.tools.list_ports.comports(), key=lambda x: x[0])
 		values=['None']
 		for port,description,address in comports:
@@ -1457,6 +1529,7 @@ class OptionWindow:
 		self.entries['serial_port']['values']=values
 	
 	def browse_database(self):
+		"""Function to browse to a database file."""
 		dbfile=askopenfilename(parent=self.win, title='Select Database',filetypes=[('Database File','*.db'),("All Files", "*.*"),],defaultextension = '.db')
 		if dbfile is None:
 			return
@@ -1487,8 +1560,10 @@ class OptionWindow:
 ###Widget Classes###
 	
 class StructureTree(Treeview):
+	"""Class inheriting Treeview which browses the site structure."""
 	
 	def __init__(self,parent,options):
+		"""StructureTree class init method."""
 		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.column("#0",stretch=True)
 		self.options=options
@@ -1496,6 +1571,7 @@ class StructureTree(Treeview):
 		
 		
 	def update_structure(self):
+		"""Function to update the contents of the widget."""
 		self.delete(*self.get_children())
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
@@ -1523,8 +1599,10 @@ class StructureTree(Treeview):
 		self.db.close()
 		
 class ReportTypeTree(Treeview):
+	"""Class inheriting Treeview which browses the report types available based on input from StructureTree."""
 	
 	def __init__(self,parent,options):
+		"""ReportTypeTree class init method."""
 		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.options=options
 		self.column("#0",stretch=True)
@@ -1563,8 +1641,10 @@ class ReportTypeTree(Treeview):
 		c.close()
 		self.db.close()
 class LabelTree(Treeview):
-
+	"""Class inheriting Treeview which browses labels available from structure from StructureTree and report from ReportTypeTree."""
+	
 	def __init__(self,parent,options):
+		"""LabelTree class init method."""
 		Treeview.__init__(self,parent,selectmode="browse", show='tree')
 		self.options=options
 		self.column("#0",stretch=True)
@@ -1583,11 +1663,9 @@ class LabelTree(Treeview):
 		c.execute("""SELECT DISTINCT LabelID,LabelName FROM v_structure WHERE ReportConfigID=? ORDER BY LabelID""",(ReportConfigID,))
 		results=c.fetchall()
 		if not results:
-			#self.generate_button.config(state='disabled')
 			c.close()
 			self.db.close()
 			return
-		#for ReportTypeID,ReportTypeName in results:
 		for LabelID,LabelName in results:
 			self.insert("", 'end', "Label_%d"%LabelID, text=LabelName)
 		self.selection_set(self.get_children("")[0])
@@ -1665,8 +1743,10 @@ class Options:
 				return
 			
 class Report:
+	"""Class to hold report data to be processed."""
 	
 	def __init__(self,report):
+		"""Report class init method."""
 		self.ReportTypeName=report['name']
 		self.LocationName=report['location']
 		self.Timestamp=report['timestamp']

@@ -27,7 +27,6 @@ import sys
 
 def main():
 	
-	
 	stk=STK()
 	try:
 		stk.t.focus_force()
@@ -36,6 +35,8 @@ def main():
 	Tkinter.mainloop()
 	
 class STK:
+	"""Main GUI class for STK application"""
+	
 	def __init__(self):
 		root = Tkinter.Tk()
 		root.title("STK")
@@ -208,8 +209,6 @@ class STK:
 		if confirm:
 			if not tkMessageBox.askyesno("Exit","Are you sure you would like to exit?"):
 				return
-		#self.t.after_cancel(self.serialalarm)
-		#self.timetext.after_cancel(self.timealarm)
 		try:
 			self.db.close()
 		except:
@@ -547,16 +546,16 @@ class STK:
 		#check if number of values=number of labels
 		if len(report.Values)!=len(report.LabelNames):
 			#self.log_process("Label and Value count do not match. Labels=%d, Values=%d"%(len(report.LabelNames),len(report.Values)))
-			print "Label/Error count mismatch"
-			#add error logging here
+			#print "Label/Error count mismatch"
+			self.log_error("Label/Error count mismatch for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return
 			
 		#check if report exists in database
 		c.execute("""SELECT ReportConfigID from v_structure WHERE LocationName=? and SensorName=? and ReportTypeName=?""",(report.LocationName,report.SensorName,report.ReportTypeName))
 		result=c.fetchone()
 		if result is None:
-			print "report config not found"
-			#add error logging
+			#print "report config not found"
+			self.log_error("Report Config not found for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return
 		else:
 			ReportConfigID=result[0]
@@ -566,12 +565,12 @@ class STK:
 		c.execute("""SELECT LabelID,LabelName from v_structure WHERE ReportConfigID=?""",(ReportConfigID,))
 		labels=c.fetchall()
 		if len(labels)==0:
-			print "no labels"
-			#add error logging
+			#print "no labels"
+			self.log_error("No labels found for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return				
 		if sorted(report.LabelNames)!=sorted([x[1] for x in labels]):
 			print "labels do not match"
-			#add error logging
+			self.log_error("Label mismatch for %s %s %s"%(report.LocationName,report.SensorName,report.ReportTypeName))
 			return
 		
 		#check if grade exists and has correct name

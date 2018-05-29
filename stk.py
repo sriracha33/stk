@@ -467,8 +467,13 @@ class STK:
 			if m and len(m)>=4:
 				self.report['machine']=m[1]
 				self.report['location']=m[2]
-				self.report['timestamp']=datetime.strptime(m[3],"%Y-%m-%d %H:%M")
+				try:
+					self.report['timestamp']=datetime.strptime(m[3],"%Y-%m-%d %H:%M")
+				except ValueError:
+					self.log_error("Invalid Report Timestamp")
+					self.report={}
 			else:
+				self.log_error("Invalid Report Header Line Two")
 				self.report={}
 		
 		#checks for line 3 of report header
@@ -488,7 +493,7 @@ class STK:
 			self.root.update()
 		
 		#if there's a report header, but it's not after an "END OF REPORT".  Means previous was partial.  Start over.
-		elif re.search(r"(?:SAMPLE CHECK REPORT|STANDARDIZE REPORT|CALIBRATE SAMPLE REPORT|REEL REPORT)",line):
+		elif re.search(r"(?:SAMPLE CHECK REPORT|STANDARDIZE REPORT|CALIBRATE SAMPLE REPORT|REEL REPORT|SHADE REPORT)",line):
 			self.log_error("Unexpected Report Termination")
 			self.report={}
 			m=re.search(r"(?:SAMPLE CHECK REPORT|STANDARDIZE REPORT|CALIBRATE SAMPLE REPORT)",line)
@@ -511,8 +516,18 @@ class STK:
 				
 		#all numbers/characters used in numbers.  Means it's values
 		elif re.search(r"^[0-9Ee\+\-\.]+[0-9Ee\+\-\.\s]+$",line.strip()):
-			#check if there are no labels.  Means this is a 2nd more greater subreport
+			#check if there are values but there has not been any sensors yet. Indicates malformed report
+			if len(self.report['data'])==0:
+				self.log_error("Unexpected values with no labels.")
+				self.report={}
+				return
+			#check if there are no labels and there are at least two sensors. Means this is a 2nd more greater subreport.
 			if not self.report['data'][-1]['labels']:
+				#check if there are at least two sensors (original one and the temporary sub sensor).  If not, indicated bad report.
+				if len(self.report['data'])<2:
+					self.log_error("Subsensor found as first sensor.  Report discarded.")
+					self.report={}
+					return
 				#delete the recently created sensor.  Get it to use it's 'sensor' name as new sub
 				sub=self.report['data'].pop(-1)
 				newsub = sub['sensor']
@@ -531,6 +546,10 @@ class STK:
 		
 		#almost an else.  If nothing else applies but it's not blank it's labels.
 		elif re.search(r"\S+",line):
+			if not 'data' in self.report or len(self.report['data'])==0:
+				self.log_error("Unexpected Labels without prior Sensor")
+				self.report={}
+				return
 			self.sublabels=[] #if there are labels coming, no way you're in a subreport
 			labels=[line[0:14],line[14:28],line[28:42],line[42:56],line[56:70]]
 			labels=map(str.strip,labels)

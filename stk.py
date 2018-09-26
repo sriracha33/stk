@@ -14,6 +14,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 matplotlib.use("TkAgg")
 
+import OpenOPC
+
 import tkMessageBox
 import time
 import re
@@ -115,9 +117,13 @@ class STK:
 		filemenu.add_command(label="Exit", command=self.exit)
 		menubar.add_cascade(label="File", menu=filemenu)
 		
-		#Connect menu.  Filled in from update_ports
+		#Serial menu.  Filled in from update_ports
 		serialmenu = Tkinter.Menu(menubar, tearoff=0)
 		menubar.add_cascade(label="Serial", menu=serialmenu)
+		
+		#OPC menu.  Filled in from update_opc
+		opcmenu = Tkinter.Menu(menubar, tearoff=0)
+		menubar.add_cascade(label="OPC", menu=opcmenu)		
 		
 		#Analyze menu
 		analyzemenu = Tkinter.Menu(menubar, tearoff=0)
@@ -147,6 +153,7 @@ class STK:
 		self.statustext=statustext
 		self.statusicon=statusicon
 		self.serialmenu=serialmenu
+		self.opcmenu=opcmenu
 		self.timetext=timetext
 		
 		#initialize configuration.
@@ -169,6 +176,8 @@ class STK:
 		self.logfile=None
 		self.serial=None
 		self.serialalarm=None
+		self.opc=None
+		self.opcalarm=None
 		self.learning=False
 		
 		#config
@@ -186,6 +195,13 @@ class STK:
 			if self.options.serial_autoconnect:
 				tkMessageBox.showinfo("Serial Autoconnect Failed","Serial Autoconnect Failed.\nAutoconnect is enabled but no port was specified")
 			self.update_ports()
+		
+		#initialize opc
+		try:
+			self.opc = OpenOPC.client()
+			self.update_opc()
+		except OpenOPC.OPCError:
+			menubar.entryconfig(menubar.index('OPC'), state="disabled")
 		
 		self.update_time()
 	
@@ -219,6 +235,10 @@ class STK:
 		except:
 			pass
 		try:
+			self.opc.close()
+		except:
+			pass		
+		try:
 			self.logfile.close()
 		except:
 			pass
@@ -233,7 +253,7 @@ class STK:
 		self.t.configure(state='disabled')
 	
 	def update_ports(self):
-		"""Function which gets current list of serial ports and makes connect menu show them."""
+		"""Function which gets current list of serial ports and makes serial menu show them."""
 		while self.serialmenu.index("end") is not None:
 			self.serialmenu.delete(0)
 		comports = sorted(serial.tools.list_ports.comports(), key=lambda x: x[0])
@@ -241,6 +261,17 @@ class STK:
 			self.serialmenu.add_command(label=port + " - " + description, command=lambda p=port: self.serial_connect(p))
 		self.serialmenu.add_separator()
 		self.serialmenu.add_command(label='Refresh Ports', command=self.update_ports)
+		
+	def update_opc(self):
+		"""Function which gets current list of opc servers and makes opc menu show them."""
+		while self.opcmenu.index("end") is not None:
+			self.opcmenu.delete(0)
+		#servers = sorted(self.opc.servers(), key=lambda x: x[0]) #incorrect.  sort differently
+		servers = self.opc.servers()
+		for server in servers:
+			self.opcmenu.add_command(label=server, command=lambda s=server: self.opc_connect(s))
+		self.opcmenu.add_separator()
+		self.opcmenu.add_command(label='Refresh Servers', command=self.update_opc)		
 	
 	def update_time(self):
 		"""Periodically called function run to update time in GUI"""
@@ -306,6 +337,54 @@ class STK:
 		self.statusicon.itemconfigure('all', fill="red")
 		self.statustext.config(text="Disconnected")
 		
+	def opc_connect(self,server):
+		"""Function to connect to an OPC server"""
+		print server
+		
+		#for testing
+		if server != 'Matrikon.OPC.Simulation.1':
+			return
+		
+		self.opc.connect(server)
+		try:
+			state=self.opc.info()[5][1]
+		except:
+			return
+		
+		if state != 'Running':
+			return
+		
+		self.db = sqlite3.connect(self.options.dbfile)
+		c=self.db.cursor()		
+		
+		c.execute("""SELECT DISTINCT TriggerTag FROM reportConfig WHERE Active=1 and ReportSource=1""")
+		results=c.fetchall()
+		
+		self.db.close()
+		
+		if not results:
+			return
+		
+		self.opctriggers=results
+		for tag in self.opctriggers:
+			print tag
+		
+		self.process_opc()
+		
+		while self.opcmenu.index("end") is not None:
+			self.opcmenu.delete(0)
+		self.opcmenu.add_command(label='Disconnect', command=self.opc_disconnect)				
+		
+	def opc_disconnect(self):
+		"""Function to disconnect OPC.  Called if manually closed or if there is an OPC error."""
+		self.t.after_cancel(self.opcalarm)
+		self.opc.close()
+		self.update_opc()
+		
+	def process_opc(self):
+		print self.opc.read('Bucket Brigade.Int2');
+		self.opcalarm = self.t.after(1000,self.process_opc)
+	
 	def log_process(self,message):
 		"""Function to log timestamp and process string to process log file."""
 		processlog=open(self.processfile,"a")
@@ -467,6 +546,7 @@ class STK:
 			if m and len(m)>=4:
 				self.report['machine']=m[1]
 				self.report['location']=m[2]
+				#timestamp from stk instead of serial?
 				try:
 					self.report['timestamp']=datetime.strptime(m[3],"%Y-%m-%d %H:%M")
 				except ValueError:
@@ -779,7 +859,7 @@ class STK:
 		self.option_win = Tkinter.Toplevel()
 		self.option_win.withdraw()
 		self.option_win.tk.call('wm', 'iconphoto', self.option_win._w, self.icon)
-		OptionWindow(self.option_win,self.options)
+		OptionWindow(self.option_win,self.options,self.opc)
 
 class ReportConfig:
 	"""Class for a GUI window to manually edit report configurations."""	
@@ -1158,7 +1238,9 @@ class DataNumerical:
 			values[i]=Value
 			lastReportID=ReportID
 			lastTimestamp=timestamp
-		self.data_tree.insert("",'end',text=timestamp,values=values)
+		#add the last record to the list.  Done only if for loop ran at least once.
+		if lastReportID!=-1:
+			self.data_tree.insert("",'end',text=timestamp,values=values)
 		
 		c.close()
 		self.db.close()
@@ -1450,10 +1532,11 @@ class DataGraphical:
 class OptionWindow:
 	"""Class for a GUI window to edit options."""
 	
-	def __init__(self,parent,options):
+	def __init__(self,parent,options,opc):
 		"""OptionWindow class init method."""
 		self.win=parent
 		self.options=options
+		self.opc=opc
 		
 		self.win.geometry("+125+125")
 		self.win.resizable(False,False)
@@ -1466,6 +1549,9 @@ class OptionWindow:
 		self.serial_lframe=Tkinter.LabelFrame(self.win,text="Serial Options")
 		self.serial_lframe.pack(padx=2, fill='x', expand=True)
 		
+		self.opc_lframe=Tkinter.LabelFrame(self.win,text="OPC Options")
+		self.opc_lframe.pack(padx=2, fill='x', expand=True)		
+		
 		self.button_frame=Tkinter.Frame(self.win)
 		self.button_frame.pack(pady=2)
 		
@@ -1476,6 +1562,8 @@ class OptionWindow:
 		self.serial_lframe.rowconfigure(1,weight=1,uniform='all')
 		self.serial_lframe.rowconfigure(2,weight=1,uniform='all')
 		self.serial_lframe.rowconfigure(3,weight=1,uniform='all')
+		self.opc_lframe.rowconfigure(0,weight=1,uniform='all')
+		self.opc_lframe.rowconfigure(1,weight=1,uniform='all')
 		
 		#variable declarations
 		self.entries={}		#widgets containing options
@@ -1489,10 +1577,12 @@ class OptionWindow:
 		Tkinter.Label(self.serial_lframe,text="Byte Size:", anchor='w').grid(row=1,column=2, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Parity:", anchor='w').grid(row=2,column=0, sticky='wens', padx=2, pady=2)
 		Tkinter.Label(self.serial_lframe,text="Stop Bits:", anchor='w').grid(row=2,column=2, sticky='wens', padx=2, pady=2)
+		Tkinter.Label(self.opc_lframe,text="Server:", anchor='w').grid(row=0,column=0, sticky='wens', padx=2, pady=2)
 		
 		#Buttons
 		Tkinter.Button(self.gen_lframe,text="Browse", command=self.browse_database, width=8,).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
 		Tkinter.Button(self.serial_lframe,text="Refresh", command=self.refresh_ports, width=8).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
+		Tkinter.Button(self.opc_lframe,text="Refresh", command=self.refresh_opc, width=8).grid(row=0,column=3, sticky='w', padx=1, pady=2)		
 		Tkinter.Button(self.button_frame,text="Save", command=self.save, width=8).pack(side='left', padx=1)
 		Tkinter.Button(self.button_frame,text="Cancel", command=self.cancel, width=8).pack(side='left', padx=1)
 		
@@ -1513,6 +1603,10 @@ class OptionWindow:
 		self.entries['serial_stopbits'].grid(row=2,column=3, sticky='wns', padx=2, pady=2)		
 		self.entries['serial_autoconnect']=Tkinter.Checkbutton(self.serial_lframe, text="Autoconnect")
 		self.entries['serial_autoconnect'].grid(row=3,column=0, sticky='wns', padx=2, pady=2, columnspan=2)		
+		self.entries['opc_server']=Combobox(self.opc_lframe, state='readonly')
+		self.entries['opc_server'].grid(row=0,column=1, sticky='wens', padx=2, pady=2, columnspan=2)					
+		self.entries['opc_autoconnect']=Tkinter.Checkbutton(self.opc_lframe, text="Autoconnect")
+		self.entries['opc_autoconnect'].grid(row=1,column=0, sticky='wns', padx=2, pady=2, columnspan=2)				
 		
 		#create and assign variables to widgets
 		for key in self.entries:
@@ -1527,6 +1621,11 @@ class OptionWindow:
 				self.entries[key]['textvariable']=self.variables[key]
 			
 		self.refresh_ports()
+		if self.opc is not None:
+			self.refresh_opc()
+		else:
+			for widget in self.opc_lframe.children.values():
+				widget['state'] = 'disabled'
 	
 	def save(self):
 		"""Function to make all the values in the widgets/variables active and save them to the congig file."""
@@ -1536,7 +1635,7 @@ class OptionWindow:
 		self.win.destroy()
 	
 	def cancel(self):
-		"""Function to cancel (don't make any changes active/saved"""
+		"""Function to cancel (don't make any changes active/saved)"""
 		self.win.destroy()
 	
 	def refresh_ports(self):
@@ -1546,6 +1645,14 @@ class OptionWindow:
 		for port,description,address in comports:
 			values.append(port)
 		self.entries['serial_port']['values']=values
+	
+	def refresh_opc(self):
+		"""Function to refresh the list of opc servers."""
+		servers = self.opc.servers()
+		values=['None']
+		for server in servers:
+			values.append(server)
+		self.entries['opc_server']['values']=values	
 	
 	def browse_database(self):
 		"""Function to browse to a database file."""
@@ -1716,6 +1823,9 @@ class Options:
 		self.serial_parity='N'
 		self.serial_stopbits=1
 		self.serial_autoconnect=False
+		
+		self.opc_server=None
+		self.opc_autoconnect=False
 		
 		#if there was no config file, save the defaults
 		if not self.load():

@@ -179,6 +179,9 @@ class STK:
 		self.opc=None
 		self.opcalarm=None
 		self.learning=False
+		self.opctriggers = None
+		self.opctriggerslastvals = None
+		
 		
 		#config
 		#self.dbversion=dbversion
@@ -345,35 +348,44 @@ class STK:
 		if server != 'Matrikon.OPC.Simulation.1':
 			return
 		
+		#connect to opc server and get status.  If it's not running, don't start.
 		self.opc.connect(server)
 		try:
 			state=self.opc.info()[5][1]
 		except:
 			return
-		
 		if state != 'Running':
 			return
 		
+		#get list of trigger tags from database and store them in self.opctriggers
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()		
-		
-		c.execute("""SELECT DISTINCT TriggerTag FROM reportConfig WHERE Active=1 and ReportSource=1""")
+		c.execute("""SELECT DISTINCT labels.TagID FROM labels INNER JOIN reportConfig on labels.LabelID = reportConfig.TriggerTagID WHERE reportConfig.Active=1 and reportConfig.ReportSource=1""")
 		results=c.fetchall()
-		
 		self.db.close()
 		
+		#if there's nothing set up, don't start.
 		if not results:
 			return
 		
-		self.opctriggers=results
-		for tag in self.opctriggers:
-			print tag
+		#extract results to a list of tags
+		self.opctriggers = [tag[0] for tag in results]
+		print self.opctriggers
 		
+		#setup opc group to monitor trigger tags and set previous values to comparison.
+		self.opc.remove("triggers") #remove in case it previously existed
+		#results=self.opc.read(self.opctriggers, group="triggers")
+		#self.opctriggerslastvals = [tag[1] for tag in results]
+		self.opctriggerslastvals=self.opc.read(self.opctriggers, group="triggers")
+		
+		#start monitoring
 		self.process_opc()
 		
+		#update opc menu to just show disconnect option.
 		while self.opcmenu.index("end") is not None:
 			self.opcmenu.delete(0)
-		self.opcmenu.add_command(label='Disconnect', command=self.opc_disconnect)				
+		self.opcmenu.add_command(label='Disconnect', command=self.opc_disconnect)								
+		
 		
 	def opc_disconnect(self):
 		"""Function to disconnect OPC.  Called if manually closed or if there is an OPC error."""
@@ -382,7 +394,33 @@ class STK:
 		self.update_opc()
 		
 	def process_opc(self):
-		print self.opc.read('Bucket Brigade.Int2');
+		"""Function that monitors opc trigger tags."""
+		results=self.opc.read(self.opctriggers, group="triggers")
+		
+		changed=[value for i, value in enumerate(results) if results[i][1]!=self.opctriggerslastvals[i][1]]
+		if changed:
+			self.opctriggerslastvals=results
+			#there will be a report.  Connect to db now
+			self.db = sqlite3.connect(self.options.dbfile)
+			c=self.db.cursor()			
+			#for every tag that changed, get all the reports triggered by that tag (probably only one, but could be more)
+			for (tag,value,quality,time) in changed:
+				c.execute("""SELECT reportConfig.reportConfigID FROM labels INNER JOIN reportConfig on labels.LabelID = reportConfig.TriggerTagID WHERE reportConfig.Active=1 and reportConfig.ReportSource=1 and labels.TagID=?""",(tag,))
+				results=c.fetchall()
+				reports=[x[0] for x in results]
+				for reportConfigID in reports:
+					c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,datetime('now','localtime'),?,1)''', (reportConfigID,))#change gradeid to null somehow later
+					ReportID=c.lastrowid
+					c.execute("""SELECT LabelID,TagID FROM labels WHERE reportConfigID=?""",(reportConfigID,))
+					labels=c.fetchall()
+					values=self.opc.read([x[1] for x in labels])
+					labels=zip(labels,[x[1] for x in values])
+					for ((LabelID,TagID),Value) in labels:
+						print LabelID, TagID, Value
+						c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,Value))
+			self.db.commit()
+			self.db.close()			
+		#schedule the next check.
 		self.opcalarm = self.t.after(1000,self.process_opc)
 	
 	def log_process(self,message):

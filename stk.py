@@ -109,7 +109,7 @@ class STK:
 		
 		#file menu
 		filemenu = Tkinter.Menu(menubar, tearoff=0)
-		filemenu.add_command(label="Open Log File", command=self.open_logfile)
+		filemenu.add_command(label="Open Serial Log File", command=self.open_logfile)
 		filemenu.add_command(label="Collect Reports from Log File", command=self.process_logfile)
 		filemenu.add_separator()
 		filemenu.add_command(label="Clear Window", command=self.clear_window)
@@ -202,7 +202,12 @@ class STK:
 		#initialize opc
 		try:
 			self.opc = OpenOPC.client()
-			self.update_opc()
+			if self.options.opc_autoconnect and self.options.opc_server:
+				self.opc_connect()
+			else:
+				if self.options.opc_autoconnect:
+					tkMessageBox.showinfo("OPC Autoconnect Failed","OPC Autoconnect Failed.\nAutoconnect is enabled but no server was specified")
+				self.update_opc()
 		except OpenOPC.OPCError:
 			menubar.entryconfig(menubar.index('OPC'), state="disabled")
 		
@@ -340,16 +345,18 @@ class STK:
 		self.statusicon.itemconfigure('all', fill="red")
 		self.statustext.config(text="Disconnected")
 		
-	def opc_connect(self,server):
+	def opc_connect(self,server=None):
 		"""Function to connect to an OPC server"""
-		print server
+		if server is not None:
+			self.options.opc_server=server
+		#updated to connected below.
 		
 		#for testing
-		if server != 'Matrikon.OPC.Simulation.1':
+		if False and self.options.opc_server != 'Matrikon.OPC.Simulation.1':
 			return
 		
 		#connect to opc server and get status.  If it's not running, don't start.
-		self.opc.connect(server)
+		self.opc.connect(self.options.opc_server)
 		try:
 			state=self.opc.info()[5][1]
 		except:
@@ -359,8 +366,8 @@ class STK:
 		
 		#get list of trigger tags from database and store them in self.opctriggers
 		self.db = sqlite3.connect(self.options.dbfile)
-		c=self.db.cursor()		
-		c.execute("""SELECT DISTINCT labels.TagID FROM labels INNER JOIN reportConfig on labels.LabelID = reportConfig.TriggerTagID WHERE reportConfig.Active=1 and reportConfig.ReportSource=1""")
+		c=self.db.cursor()
+		c.execute("""SELECT DISTINCT TriggerTag FROM reportConfig WHERE reportConfig.Active=1 and reportConfig.ReportSource=1""")
 		results=c.fetchall()
 		self.db.close()
 		
@@ -370,13 +377,10 @@ class STK:
 		
 		#extract results to a list of tags
 		self.opctriggers = [tag[0] for tag in results]
-		print self.opctriggers
+		#print self.opctriggers
 		
-		#setup opc group to monitor trigger tags and set previous values to comparison.
-		self.opc.remove("triggers") #remove in case it previously existed
-		#results=self.opc.read(self.opctriggers, group="triggers")
-		#self.opctriggerslastvals = [tag[1] for tag in results]
-		self.opctriggerslastvals=self.opc.read(self.opctriggers, group="triggers")
+		#get initial reading to monitor for changes
+		self.opctriggerslastvals=self.opc.read(self.opctriggers)
 		
 		#start monitoring
 		self.process_opc()
@@ -395,33 +399,59 @@ class STK:
 		
 	def process_opc(self):
 		"""Function that monitors opc trigger tags."""
-		results=self.opc.read(self.opctriggers, group="triggers")
+		results=self.opc.read(self.opctriggers)
 		
-		changed=[value for i, value in enumerate(results) if results[i][1]!=self.opctriggerslastvals[i][1]]
+		changed=[value for i, value in enumerate(results) if self.opc_value(results[i][1])!=self.opc_value(self.opctriggerslastvals[i][1])]
+		#print [(value[0],self.opc_value(value[1])) for value in changed]
 		if changed:
+			#set current reading to now be last reading to compare to next time.
 			self.opctriggerslastvals=results
+			
 			#there will be a report.  Connect to db now
 			self.db = sqlite3.connect(self.options.dbfile)
 			c=self.db.cursor()			
+			
 			#for every tag that changed, get all the reports triggered by that tag (probably only one, but could be more)
 			for (tag,value,quality,time) in changed:
-				c.execute("""SELECT reportConfig.reportConfigID FROM labels INNER JOIN reportConfig on labels.LabelID = reportConfig.TriggerTagID WHERE reportConfig.Active=1 and reportConfig.ReportSource=1 and labels.TagID=?""",(tag,))
+				c.execute("""SELECT reportConfigID FROM reportConfig WHERE Active=1 and ReportSource=1 and TriggerTag=?""",(tag,))
 				results=c.fetchall()
 				reports=[x[0] for x in results]
 				for reportConfigID in reports:
-					c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,datetime('now','localtime'),?,1)''', (reportConfigID,))#change gradeid to null somehow later
+					#add timestamp shit here. Check if TimestampTag is NULL. If so, use server time. If not, read that tag and use that.
+					try:
+						timestamp=datetime.strptime(value,'%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
+					except ValueError:
+						timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+					
+					#get some report info for display/logging.
+					c.execute("""SELECT LocationName,SensorName,ReportTypeName FROM v_structure WHERE reportConfigID=?""",(reportConfigID,))
+					print c.fetchone()
+					
+					c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,NULL)''', (timestamp,reportConfigID,))#change gradeid to null somehow later
 					ReportID=c.lastrowid
 					c.execute("""SELECT LabelID,TagID FROM labels WHERE reportConfigID=?""",(reportConfigID,))
 					labels=c.fetchall()
 					values=self.opc.read([x[1] for x in labels])
 					labels=zip(labels,[x[1] for x in values])
 					for ((LabelID,TagID),Value) in labels:
-						print LabelID, TagID, Value
+						#print LabelID, TagID, Value
 						c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,Value))
 			self.db.commit()
 			self.db.close()			
+		
 		#schedule the next check.
-		self.opcalarm = self.t.after(1000,self.process_opc)
+		self.opcalarm = self.t.after(5000,self.process_opc)
+	
+	def opc_value(self,value):
+		"""Function to return a useful value for an opc reading"""
+		if type(value) is buffer:
+			v=map(ord,value)
+			value_string=""
+			for item in v:
+				if item!=0: value_string+=chr(item)
+			return value_string
+		else:
+			return value
 	
 	def log_process(self,message):
 		"""Function to log timestamp and process string to process log file."""

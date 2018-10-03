@@ -419,23 +419,40 @@ class STK:
 				for reportConfigID in reports:
 					#add timestamp shit here. Check if TimestampTag is NULL. If so, use server time. If not, read that tag and use that.
 					try:
-						timestamp=datetime.strptime(value,'%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
+						timestamp=datetime.strptime(self.opc_value(value),'%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
 					except ValueError:
 						timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 					
 					#get some report info for display/logging.
 					c.execute("""SELECT LocationName,SensorName,ReportTypeName FROM v_structure WHERE reportConfigID=?""",(reportConfigID,))
-					print c.fetchone()
-					
+					(LocationName,SensorName,ReportTypeName)=c.fetchone()
+					self.display_line('{:^74s}\n'.format(ReportTypeName))
+					self.display_line('{:<20s}{:^34s}{:>20s}\n'.format(LocationName,SensorName,timestamp))
 					c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,NULL)''', (timestamp,reportConfigID,))#change gradeid to null somehow later
 					ReportID=c.lastrowid
-					c.execute("""SELECT LabelID,TagID FROM labels WHERE reportConfigID=?""",(reportConfigID,))
+					c.execute("""SELECT LabelID,TagID,LabelName FROM labels WHERE reportConfigID=?""",(reportConfigID,))
 					labels=c.fetchall()
 					values=self.opc.read([x[1] for x in labels])
 					labels=zip(labels,[x[1] for x in values])
-					for ((LabelID,TagID),Value) in labels:
+					i=0
+					#self.display_line('{}{:-^72s}{}\n'.format(unichr(0x250D).encode('utf-8'),"",chr(191)))
+					display=unichr(0x250C)+unichr(0x2500)*23+unichr(0x252C)+unichr(0x2500)*23+unichr(0x252C)+unichr(0x2500)*23+unichr(0x2510)+"\n"
+					self.display_line(display)
+					for ((LabelID,TagID,LabelName),Value) in labels:
 						#print LabelID, TagID, Value
+						if i>=3:
+							self.display_line(unichr(0x2502)+'\n')
+							i=0
 						c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,Value))
+						self.display_line('{}{:<12s} {:>10.8g}'.format(unichr(0x2502).encode('utf-8'),LabelName,Value))
+						i=i+1
+					while i<3:
+						self.display_line('{}{:<23s}'.format(unichr(0x2502).encode('utf-8'),""))
+						i=i+1
+					self.display_line(unichr(0x2502)+'\n')
+					display=unichr(0x2514)+unichr(0x2500)*23+unichr(0x2534)+unichr(0x2500)*23+unichr(0x2534)+unichr(0x2500)*23+unichr(0x2518)+"\n\n\n"
+					self.display_line(display)
+						
 			self.db.commit()
 			self.db.close()			
 		

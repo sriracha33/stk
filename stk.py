@@ -88,8 +88,13 @@ class STK:
 		statusicon=Tkinter.Canvas(statusbar,height=20, width=20)
 		statusicon.create_oval(3, 3, 17, 17, outline="black", fill="red")
 		statusicon.pack(side='left')
-		statustext=Tkinter.Label(statusbar, text="Not Connected", anchor='w')
+		statustext=Tkinter.Label(statusbar, text="Serial Disconnected", anchor='w', width=35)
 		statustext.pack(side='left')
+		opc_statusicon=Tkinter.Canvas(statusbar,height=20, width=20)
+		opc_statusicon.create_oval(3, 3, 17, 17, outline="black", fill="red")
+		opc_statusicon.pack(side='left')
+		opc_statustext=Tkinter.Label(statusbar, text="OPC Disconnected", anchor='w')
+		opc_statustext.pack(side='left')		
 		timetext=Tkinter.Label(statusbar, anchor='e')
 		timetext.pack(side='right')
 		
@@ -152,6 +157,8 @@ class STK:
 		self.menubar=menubar
 		self.statustext=statustext
 		self.statusicon=statusicon
+		self.opc_statustext=opc_statustext
+		self.opc_statusicon=opc_statusicon		
 		self.serialmenu=serialmenu
 		self.opcmenu=opcmenu
 		self.timetext=timetext
@@ -330,9 +337,9 @@ class STK:
 			self.serialmenu.delete(0)
 		self.serialmenu.add_command(label='Disconnect', command=self.serial_disconnect)	
 		
-		self.log_process("Connected to %s" % (port,))
+		self.log_process("Connected to serial on port %s" % (port,))
 		self.statusicon.itemconfigure('all', fill="green")
-		self.statustext.config(text="Connected to port: %s at %s,%s,%s,%s"%(port,self.serial.baudrate,self.serial.bytesize,self.serial.parity,self.serial.stopbits))
+		self.statustext.config(text="%s,%s,%s,%s,%s"%(port,self.serial.baudrate,self.serial.bytesize,self.serial.parity,self.serial.stopbits))
 		self.process_serial()
 	
 	
@@ -343,7 +350,7 @@ class STK:
 		self.update_ports()
 		self.menubar.entryconfigure(2, state='normal')
 		self.statusicon.itemconfigure('all', fill="red")
-		self.statustext.config(text="Disconnected")
+		self.statustext.config(text="Serial Disconnected")
 		
 	def opc_connect(self,server=None):
 		"""Function to connect to an OPC server"""
@@ -390,19 +397,23 @@ class STK:
 			self.opcmenu.delete(0)
 		self.opcmenu.add_command(label='Disconnect', command=self.opc_disconnect)								
 		
+		self.log_process("Connected to opc server %s" % (self.options.opc_server,))
+		self.opc_statusicon.itemconfigure('all', fill="green")
+		self.opc_statustext.config(text=self.options.opc_server)		
 		
 	def opc_disconnect(self):
 		"""Function to disconnect OPC.  Called if manually closed or if there is an OPC error."""
 		self.t.after_cancel(self.opcalarm)
 		self.opc.close()
 		self.update_opc()
+		self.opc_statusicon.itemconfigure('all', fill="red")
+		self.opc_statustext.config(text="OPC Disconnected")		
 		
 	def process_opc(self):
 		"""Function that monitors opc trigger tags."""
 		results=self.opc.read(self.opctriggers)
 		
 		changed=[value for i, value in enumerate(results) if self.opc_value(results[i][1])!=self.opc_value(self.opctriggerslastvals[i][1])]
-		#print [(value[0],self.opc_value(value[1])) for value in changed]
 		if changed:
 			#set current reading to now be last reading to compare to next time.
 			self.opctriggerslastvals=results
@@ -419,38 +430,43 @@ class STK:
 				for reportConfigID in reports:
 					#add timestamp shit here. Check if TimestampTag is NULL. If so, use server time. If not, read that tag and use that.
 					try:
-						timestamp=datetime.strptime(self.opc_value(value),'%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
+						timestamp=datetime.strptime(self.opc_value(value),'%m-%d-%Y %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
 					except ValueError:
 						timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 					
 					#get some report info for display/logging.
 					c.execute("""SELECT LocationName,SensorName,ReportTypeName FROM v_structure WHERE reportConfigID=?""",(reportConfigID,))
 					(LocationName,SensorName,ReportTypeName)=c.fetchone()
-					self.display_line('{:^74s}\n'.format(ReportTypeName))
-					self.display_line('{:<20s}{:^34s}{:>20s}\n'.format(LocationName,SensorName,timestamp))
+					self.display_line('{:^79s}\n'.format(ReportTypeName))
+					self.display_line('{:<20s}{:^39s}{:>20s}\n'.format(LocationName,SensorName,timestamp))
 					c.execute('''INSERT INTO reports (ReportID, Timestamp, ReportConfigID, GradeID) VALUES (NULL,?,?,NULL)''', (timestamp,reportConfigID,))#change gradeid to null somehow later
 					ReportID=c.lastrowid
-					c.execute("""SELECT LabelID,TagID,LabelName FROM labels WHERE reportConfigID=?""",(reportConfigID,))
+					c.execute("""SELECT LabelID,TagID,LabelName,ArrayIndex FROM labels WHERE reportConfigID=?""",(reportConfigID,))
 					labels=c.fetchall()
+					
+					#if there are no labels for report, just move on
+					if not labels:
+						continue
+					
 					values=self.opc.read([x[1] for x in labels])
 					labels=zip(labels,[x[1] for x in values])
 					i=0
-					#self.display_line('{}{:-^72s}{}\n'.format(unichr(0x250D).encode('utf-8'),"",chr(191)))
-					display=unichr(0x250C)+unichr(0x2500)*23+unichr(0x252C)+unichr(0x2500)*23+unichr(0x252C)+unichr(0x2500)*23+unichr(0x2510)+"\n"
+					display=unichr(0x250C)+unichr(0x2500)*25+unichr(0x252C)+unichr(0x2500)*25+unichr(0x252C)+unichr(0x2500)*25+unichr(0x2510)+"\n"
 					self.display_line(display)
-					for ((LabelID,TagID,LabelName),Value) in labels:
-						#print LabelID, TagID, Value
+					for ((LabelID,TagID,LabelName,ArrayIndex),Value) in labels:
+						if isinstance(Value,tuple):
+							Value=Value[ArrayIndex]
 						if i>=3:
 							self.display_line(unichr(0x2502)+'\n')
 							i=0
 						c.execute('''INSERT INTO reportData (ReportDataID, ReportID, LabelID, Value) VALUES (NULL,?,?,?)''',(ReportID,LabelID,Value))
-						self.display_line('{}{:<12s} {:>10.8g}'.format(unichr(0x2502).encode('utf-8'),LabelName,Value))
+						self.display_line('{}{:<12.12s} {:>12.6g}'.format(unichr(0x2502).encode('utf-8'),LabelName,Value))
 						i=i+1
 					while i<3:
-						self.display_line('{}{:<23s}'.format(unichr(0x2502).encode('utf-8'),""))
+						self.display_line('{}{:<25s}'.format(unichr(0x2502).encode('utf-8'),""))
 						i=i+1
 					self.display_line(unichr(0x2502)+'\n')
-					display=unichr(0x2514)+unichr(0x2500)*23+unichr(0x2534)+unichr(0x2500)*23+unichr(0x2534)+unichr(0x2500)*23+unichr(0x2518)+"\n\n\n"
+					display=unichr(0x2514)+unichr(0x2500)*25+unichr(0x2534)+unichr(0x2500)*25+unichr(0x2534)+unichr(0x2500)*25+unichr(0x2518)+"\n\n\n"
 					self.display_line(display)
 						
 			self.db.commit()
@@ -848,7 +864,7 @@ class STK:
 			if result:
 				LabelID = result[0]
 			else:
-				c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL)''', (LabelName,ReportConfigID))
+				c.execute('''INSERT INTO labels (LabelID, LabelName, ReportConfigID, TagID) VALUES (NULL,?,?,NULL,NULL)''', (LabelName,ReportConfigID))
 				LabelID=c.lastrowid
 				self.log_process("New label %s for sensor %s at location %s added to database"%(LabelName,report.SensorName,report.LocationName))
 			
@@ -1229,22 +1245,18 @@ class DataNumerical:
 			return
 		
 		#check what filter is selected and calculate end date and duration to subtract in sql statement
+		datenow=datetime.now()
 		filter=self.filter_select.get()
 		if filter==0:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=1)
+			startdate=datenow-timedelta(days=1)
 		elif filter==1:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=7)
+			startdate=datenow-timedelta(days=7)
 		elif filter==2:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=30)
+			startdate=datenow-timedelta(days=30)
 		elif filter==3:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=365)
+			startdate=datenow-timedelta(days=365)
 		elif filter==4:
-			enddate=datetime.now()
-			startdate=datetime.strptime("1970-01-01 00:00","%Y-%m-%d %H:%M")
+			pass #all data
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d %H:%M")
@@ -1259,9 +1271,12 @@ class DataNumerical:
 			if enddate<=startdate:
 				tkMessageBox.showerror("Invalid Dates","End date must be after start date.", parent=self.an_win)
 				return
-		
-		#set starttime.seconds to zero just to avoid confusion
-		startdate=startdate.replace(second=0)
+			
+		#set starttime.seconds to zero just to avoid confusion, if startdate is used
+		try:
+			startdate=startdate.replace(second=0)
+		except:
+			pass
 		
 		#get selected SensorID from tree id
 		sensor=self.report_tree.selection()[0]
@@ -1311,7 +1326,15 @@ class DataNumerical:
 		#pull out all the values and update the report one row at a time.  
 		#Fills a whole row of data while the report ID stays the same, and when it changes, update the tree.
 		lastReportID=-1
-		c.execute("""SELECT ReportID, timestamp, LabelID, Value, GradeCode from v_reportData WHERE ReportConfigID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate,enddate))
+		
+		#execute a sql statement based on the filter
+		if filter==5:   #custom
+			c.execute("""SELECT ReportID, timestamp, LabelID, Value, GradeCode from v_reportData WHERE ReportConfigID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate,enddate))
+		elif filter==4: #all data
+			c.execute("""SELECT ReportID, timestamp, LabelID, Value, GradeCode from v_reportData WHERE ReportConfigID=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,))			
+		else:           #Last x amount of time
+			c.execute("""SELECT ReportID, timestamp, LabelID, Value, GradeCode from v_reportData WHERE ReportConfigID=? and timestamp>=? ORDER BY timestamp DESC, ReportID DESC""",(ReportConfigID,startdate))			
+			
 		for ReportID, timestamp, LabelID, Value, GradeCode in c.fetchall():
 			if ReportID!=lastReportID:
 				if lastReportID!=-1:
@@ -1510,39 +1533,38 @@ class DataGraphical:
 	def generate_graph(self):
 		
 		#check what filter is selected and calculate end date and duration to subtract in sql statement
+		datenow=datetime.now()
 		filter=self.filter_select.get()
 		if filter==0:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=1)
+			startdate=datenow-timedelta(days=1)
 		elif filter==1:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=7)
+			startdate=datenow-timedelta(days=7)
 		elif filter==2:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=30)
+			startdate=datenow-timedelta(days=30)
 		elif filter==3:
-			enddate=datetime.now()
-			startdate=enddate-timedelta(days=365)
+			startdate=datenow-timedelta(days=365)
 		elif filter==4:
-			enddate=datetime.now()
-			startdate=datetime.strptime("1970-01-01 00:00","%Y-%m-%d %H:%M")
+			pass #all data
 		elif filter==5:
 			try:
 				enddate=datetime.strptime(self.filter_end.get().strip(),"%Y-%m-%d %H:%M")
 			except ValueError:
-				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Date","Invalid End Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.win)
 				return
 			try:
 				startdate=datetime.strptime(self.filter_start.get().strip(),"%Y-%m-%d %H:%M")
 			except ValueError:
-				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Date","Invalid Start Date\nPlease select valid date using format YYYY-MM-DD HH:MM", parent=self.win)
 				return
 			if enddate<=startdate:
-				tkMessageBox.showerror("Invalid Dates","End date must be after start date.", parent=self.an_win)
+				tkMessageBox.showerror("Invalid Dates","End date must be after start date.", parent=self.win)
 				return
 	
-		#set starttime.seconds to zero just to avoid confusion
-		startdate=startdate.replace(second=0)
+		#set starttime.seconds to zero just to avoid confusion, if used
+		try:
+			startdate=startdate.replace(second=0)
+		except:
+			pass
 	
 		#get selected LabelID/LabelName from label_tree id
 		label=self.label_tree.selection()[0]
@@ -1568,8 +1590,17 @@ class DataGraphical:
 	
 		self.db = sqlite3.connect(self.options.dbfile)
 		c=self.db.cursor()
-
-		c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
+		
+		#execute a sql statement based on the filter
+		if filter==5:   #custom
+			c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
+		elif filter==4: #all data
+			c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,))			
+		else:           #Last x amount of time
+			c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,))
+		
+		
+		#c.execute("""SELECT Timestamp, Value from v_reportData WHERE LabelID=? and timestamp>=? and timestamp<=? ORDER BY timestamp DESC, ReportID DESC""",(LabelID,startdate,enddate))
 		results=c.fetchall()
 		records=len(results)
 		#need at least two results to make a GradeName
